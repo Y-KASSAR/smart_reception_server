@@ -1,0 +1,78 @@
+# config.yaml - Smart Reception Assistant Configuration
+# ============================================================
+# This file controls ALL tunable parameters of the system.
+# Edit this file to change behavior without modifying code.
+# Restart the server after making changes.
+# ============================================================
+
+# --- Server Settings ---
+server:
+  host: "0.0.0.0"
+  port: 5000
+  debug: false
+  workers: 1
+
+# --- Edge Device Settings ---
+edge:
+  expected_ip: "192.168.1.100"
+  heartbeat_interval: 10
+  frame_timeout: 30
+
+# --- Camera Settings ---
+camera:
+  device_id: 0
+  resolution_width: 1920
+  resolution_height: 1080
+  fps: 30
+  jpeg_quality: 80
+  backend: "v4l2"
+
+# --- PIR Sensor Settings ---
+pir:
+  gpio_pin: 17
+  debounce_ms: 2000
+  idle_timeout_s: 60
+  always_on: false
+
+# --- Person Detection Settings ---
+detection:
+  model: "yolov8n"
+  confidence_threshold: 0.5
+  nms_iou_threshold: 0.4
+  device: "auto"
+
+# --- Face Recognition Settings ---
+recognition:
+  detection_model: "mtcnn"
+  recognition_model: "facenet"
+  similarity_threshold: 0.80
+  max_embeddings_per_guest: 5
+  re_recognition_interval: 30
+
+# --- Lobby Monitoring Settings ---
+monitoring:
+  security_dwell_threshold: 600
+  assistance_dwell_threshold: 300
+  tracking_timeout: 30
+
+# --- Alert Settings ---
+alerts:
+  cooldown_period: 900
+  email_enabled: true
+  sms_enabled: false
+  dashboard_sound_enabled: true
+
+# --- Database Settings ---
+database:
+  path: "data/smart_reception.db"
+  backup_enabled: true
+  backup_interval: "daily"
+  backup_time: "02:00"
+  backup_retention_days: 7
+
+# --- Security Settings ---
+security:
+  session_timeout: 28800
+  inactivity_timeout: 1800
+  max_login_attempts: 5
+  lockout_duration: 900
