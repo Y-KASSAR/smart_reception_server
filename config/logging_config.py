@@ -37,7 +37,7 @@ def setup_logging(log_dir:str= "logs" , log_level: str = "DEBUG") -> None:
     logger.addHandler(console_handler)
 
     logger.info("Logging system initialized")
-
+  
 def get_logger(module_name:str)-> logging.Logger:
 
     return logging.getLogger(f"smart_reception.{module_name}")
