@@ -1,0 +1,102 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Virtualenv ---
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Test / coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# --- IDE / editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Secrets / runtime ---
+.env
+.env.local
+*.pem
+*.key
+key.pem
+cert.pem
+
+# --- Logs ---
+logs/*.log
+logs/*.err
+logs/_smoke.*
+logs/boot_test.log
+logs/stage_a_boot*.log
+
+# --- Database / data ---
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/backups/
+data/test_*.db
+
+# --- ML model weights (downloaded on first run) ---
+yolov8*.pt
+*.onnx
+models/*.pt
+models/*.onnx
+
+# --- Frontend ---
+node_modules/
+frontend/node_modules/
+frontend/dist-temp/
+frontend/.vite/
+frontend/*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- OS ---
+desktop.ini
+$RECYCLE.BIN/
+
+# --- Project-specific ---
+sustain.csv
+*.bak
+
+# --- Submission bundles / backups (build artifacts, never source) ---
+*_submission*.zip
+.git.backup/
