@@ -24,8 +24,9 @@ from __future__ import annotations
 
 import smtplib
 import threading
-from datetime import datetime, timezone
+from datetime import datetime
 from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Optional
 
 from config.logging_config import get_logger
@@ -34,6 +35,7 @@ from core.event_bus import event_bus
 from database.connection import SessionLocal
 from database.models import Alert, AlertType
 from database.repositories import AlertRepository
+from modules.alerts.notification_templates import render_alert_email, render_whatsapp
 
 logger = get_logger(__name__)
 
@@ -234,7 +236,10 @@ class AlertNotifier:
     def send_email(self, alert: Alert) -> bool:
         s = settings.secrets
         recipients = s.alert_email_recipients
-        if not (s.smtp_host and s.smtp_username and recipients):
+        # A relay needs at minimum a host and at least one recipient. Auth
+        # (username/password) and STARTTLS are optional — a plain in-house
+        # postfix on :25 or a capture/sink server has neither.
+        if not (s.smtp_host and recipients):
             # Console fallback so the dispatch path is still observable
             # during demos / before SMTP is provisioned.
             self._write_outbox("email", {
@@ -250,31 +255,61 @@ class AlertNotifier:
             logger.info(f"Email console-fallback for alert_id={alert.id} (SMTP not configured)")
             return False
         try:
+            sender = s.smtp_username or f"smart-reception@{s.smtp_host}"
+            # Per-incident template: distinct subject, body and call-to-action
+            # for each AlertType (security / wanted / assistance / vip / etc.).
+            subject, text_body, html_body = render_alert_email(alert)
             msg = EmailMessage()
-            msg["Subject"] = f"[Smart Reception] {alert.title}"
-            msg["From"] = s.smtp_username
-            msg["To"] = ", ".join(recipients)
-            body = (
-                f"{alert.description or ''}\n\n"
-                f"Type: {alert.alert_type.value}\n"
-                f"Severity: {alert.severity}\n"
-                f"Time: {datetime.now(timezone.utc).isoformat()}"
-            )
-            msg.set_content(body)
+            msg["Subject"] = subject
+            # Branded display name so a generic gmail.com mailbox still reads
+            # professionally in the recipient's inbox.
+            from_addr = formataddr((s.smtp_from_name or "Smart Reception", sender))
+            msg["From"] = from_addr
+            # Privacy: no recipient should see who else was notified. We put a
+            # cosmetic visible To (the sending mailbox itself, so clients don't
+            # show "undisclosed-recipients") and list the real recipients in
+            # Bcc. The actual delivery set is passed explicitly as to_addrs
+            # below, so the From mailbox is NOT copied — only the blind
+            # recipients receive the mail.
+            msg["To"] = from_addr
+            msg["Bcc"] = ", ".join(recipients)
+            msg.set_content(text_body)
+            # HTML alternative — clients that block HTML fall back to text_body.
+            msg.add_alternative(html_body, subtype="html")
 
             with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=10) as smtp:
-                smtp.starttls()
-                smtp.login(s.smtp_username, s.smtp_password)
-                smtp.send_message(msg)
+                if s.smtp_use_tls:
+                    smtp.starttls()
+                # Authenticate only when credentials are present — open relays
+                # and local sinks reject AUTH on an unauthenticated session.
+                if s.smtp_username and s.smtp_password:
+                    smtp.login(s.smtp_username, s.smtp_password)
+                # Explicit envelope recipients = the blind list only.
+                # send_message also strips the Bcc header before transmission.
+                smtp.send_message(msg, from_addr=sender, to_addrs=recipients)
             logger.info(f"Email alert sent for alert_id={alert.id}")
             return True
         except Exception as e:
             logger.error(f"Email send failed for alert_id={alert.id}: {e}")
             return False
 
+    @staticmethod
+    def _wa_address(number: str) -> str:
+        """Normalize a phone number to a WhatsApp channel address.
+
+        Twilio's WhatsApp API requires a ``whatsapp:`` prefix on both the
+        From (the sandbox number) and the To. We tolerate config values
+        written either way (``+1415...`` or ``whatsapp:+1415...``).
+        """
+        number = number.strip()
+        return number if number.startswith("whatsapp:") else f"whatsapp:{number}"
+
     def send_sms(self, alert: Alert) -> bool:
         s = settings.secrets
         recipients = s.alert_sms_recipients
+        is_whatsapp = s.twilio_channel == "whatsapp"
+        # Same per-incident template as email, rendered for WhatsApp/SMS.
+        body = render_whatsapp(alert)
         if not (s.twilio_account_sid and s.twilio_auth_token and s.twilio_from_number and recipients):
             # Console fallback
             self._write_outbox("sms", {
@@ -282,7 +317,8 @@ class AlertNotifier:
                 "alert_id": alert.id,
                 "type": alert.alert_type.value,
                 "severity": alert.severity,
-                "body": f"[Smart Reception] {alert.title}",
+                "body": body,
+                "channel": s.twilio_channel,
                 "recipients": recipients or [],
                 "twilio_configured": False,
             })
@@ -292,12 +328,13 @@ class AlertNotifier:
             # Lazy import: twilio is optional at install time
             from twilio.rest import Client  # type: ignore
             client = Client(s.twilio_account_sid, s.twilio_auth_token)
-            body = f"[Smart Reception] {alert.title}"
+            sender = self._wa_address(s.twilio_from_number) if is_whatsapp else s.twilio_from_number
             for number in recipients:
-                client.messages.create(
-                    body=body, from_=s.twilio_from_number, to=number
-                )
-            logger.info(f"SMS alert sent for alert_id={alert.id}")
+                to = self._wa_address(number) if is_whatsapp else number
+                client.messages.create(body=body, from_=sender, to=to)
+            logger.info(
+                f"{'WhatsApp' if is_whatsapp else 'SMS'} alert sent for alert_id={alert.id}"
+            )
             return True
         except ImportError:
             logger.warning("twilio package not installed; SMS disabled")

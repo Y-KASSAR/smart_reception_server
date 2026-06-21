@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from database.connection import get_db
-from database.repositories import RecommendationRepository
+from database.repositories import RecommendationRepository, ServiceRepository
 from database.models import RecommendationStatus
 from api.schemas import RecommendationResponse, RecommendationStatusSchema
 from modules.upselling import recommendation_engine
@@ -51,6 +51,10 @@ def update_recommendation_status(
     rec = RecommendationRepository.update_status(db, rec_id, RecommendationStatus(status.value))
     if not rec:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    # A guest responding to a recommendation changes that service's acceptance
+    # statistics, so refresh its popularity baseline immediately.
+    if rec.status in (RecommendationStatus.ACCEPTED, RecommendationStatus.DECLINED):
+        ServiceRepository.recompute_popularity(db, service_id=rec.service_id)
     return rec
 
 

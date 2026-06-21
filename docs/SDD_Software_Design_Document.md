@@ -508,10 +508,11 @@ class RecommendationEngine:
 | Attribute | Detail |
 |---|---|
 | Module Name | `alerts/alert_manager.py` |
-| Purpose | Generate, deliver, and manage alert notifications. Supports email (SMTP), SMS (Twilio), and dashboard push (WebSocket). |
+| Purpose | Generate, deliver, and manage alert notifications. Supports email (SMTP), SMS / **WhatsApp** (Twilio), and dashboard push (WebSocket). |
 | Location | Laptop AI Server |
-| Dependencies | smtplib, email.mime, Twilio SDK, Database Module (C7), Connection Manager (C4) |
+| Dependencies | smtplib, email.message, Twilio SDK, Database Module (C7), Connection Manager (C4) |
 | Design Pattern | Observer (alert subscribers), Template Method (alert types) |
+| As-built note | Implemented as `alerts/alert_notifier.py`. Per-incident bodies are rendered by `alerts/notification_templates.py` (`render_alert_email` → subject + branded HTML + text; `render_whatsapp` → compact WhatsApp/SMS body) — one `_INCIDENTS` table per `AlertType`. **Email recipients are blind-copied (Bcc)** so they cannot see one another. The Twilio channel is selectable via `TWILIO_CHANNEL` (`sms` \| `whatsapp`, incl. the WhatsApp Sandbox). |
 
 ```python
 class AlertManager:
@@ -922,8 +923,8 @@ Lobby Monitor → trigger → Alert Manager → check cooldown (DB) → save ale
 
 | Communication Path | Protocol | Implementation |
 |---|---|---|
-| RPi → Laptop (frames, data) | HTTPS (TLS 1.2+) | Self-signed TLS cert for local network. |
-| Laptop → Dashboard (API, WS) | HTTPS / WSS | Same TLS cert. |
+| RPi → Laptop (frames, data) | HTTPS (TLS 1.2+) | TLS terminated by the Caddy reverse proxy (`Caddyfile`); `tls internal` for LAN or Let's Encrypt for a public domain. |
+| Laptop → Dashboard (API, WS) | HTTPS / WSS | Same Caddy front-end; `/ws` upgraded to WSS automatically. |
 | Laptop → Email Server | SMTP with STARTTLS | Python `smtplib` with `starttls()`. |
 | Laptop → Twilio API | HTTPS | Twilio SDK handles TLS. |
 
@@ -1052,7 +1053,7 @@ The baseline R1–R8 (loyalty upgrade, service repeat, business, high spender, V
 
 | Rule | Trigger | Boost | Rationale string |
 |---|---|---|---|
-| R1 | always | popularity_score | Popularity baseline |
+| R1 | always | popularity_score | Popularity baseline (**statistics-driven** — see §13.6) |
 | R2 | VIP + category ∈ {spa, dining, room_service} | +0.30 | VIP boost ({category}) |
 | R3 | guest dietary preference ⊂ service description | +0.20 | Matches dietary preference |
 | R4 | guest room-type preference ⊂ service description | +0.10 | Matches room-type preference |
@@ -1066,8 +1067,10 @@ Scores cap at 1.0, sorted descending, top-5 persisted with the rationale string.
 
 - **Face recognition (§7.2):** embedding **512-D** (not 128-D); threshold **0.80** (not 0.70); matcher is a single `(N,512)·(512,)` matrix-vector product (the per-pair loop is kept only for unit tests).
 - **Person detection (§7.1):** inference at **`imgsz=960` on CUDA** (FP16), not 640×640 CPU; class restricted to person at the call (`classes=[0]`).
+- **Recommendation R1 popularity baseline (§7.4):** `Service.popularity_score` is now **statistics-driven** rather than a static constant. `ServiceRepository.recompute_popularity()` derives it from recommendation outcomes using a Laplace-smoothed acceptance rate — `(accepted + 1) / (accepted + declined + 2)` — so it is the neutral 0.5 with no history and converges to the true acceptance ratio with volume. It refreshes live when a recommendation is accepted/declined and on-demand via `POST /api/services/recompute-popularity`.
+- **Alert dispatch (§4.2.6):** per-incident templates (`notification_templates.py`) for email (branded HTML + text) and WhatsApp/SMS; email recipients **blind-copied (Bcc)**; Twilio channel selectable (`TWILIO_CHANNEL=sms|whatsapp`, incl. WhatsApp Sandbox).
 - **At-rest encryption (§10.1.1):** **AES-256-GCM** authenticated framing (`version byte ∥ 12-byte nonce ∥ ciphertext ∥ 16-byte tag`, base64) in `utils/crypto_utils.py`, not AES-256-CBC. Key from `ENCRYPTION_KEY`. A legacy Fernet reader is retained for back-compat.
-- **Transport (§10.1.2):** HTTPS/WSS deferred for the isolated-LAN demo (documented for production via Caddy).
+- **Transport (§10.1.2):** HTTPS/WSS provided by a **Caddy reverse proxy** (`Caddyfile` in repo root) that terminates TLS in front of the app on `127.0.0.1:5000` and upgrades `/ws` to WSS automatically. The app itself still speaks plain HTTP/WS on localhost; no application code changes were needed. Site blocks for `localhost` (auto-trusted), LAN IP (`tls internal`), and public domain (Let's Encrypt) are included.
 - **Ports/topology (§3.3, §12):** a single FastAPI process serves API + WebSocket + SPA on one port; nodes joined by a direct Cat-6 cable on `192.168.99.0/24` (server `.1`, Pi `.2`), not the baseline `192.168.1.0/24` multi-port layout.
 - **Edge framework:** FastAPI (not Flask). 15 routers (added `audio`). Lifespan hydrates the face-engine embedding cache before serving.
 - **New subsystem (C21–C24):** live speech translation (faster-whisper), audio edge client, audio ingest route, Live Translation page — not in the baseline; addresses the trilingual reception use case.

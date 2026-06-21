@@ -131,12 +131,24 @@ export async function fetchPendingAlerts(): Promise<Alert[]> {
   return data;
 }
 
+// Fired after any alert status mutation so live UI (e.g. the sidebar badge)
+// can refresh its pending count without waiting for a new alert push or a
+// full page reload.
+export const ALERTS_CHANGED_EVENT = "alerts:changed";
+function notifyAlertsChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(ALERTS_CHANGED_EVENT));
+  }
+}
+
 export async function acknowledgeAlert(alertId: number, staffId: number) {
   await api.post(`/api/alerts/${alertId}/acknowledge?staff_id=${staffId}`);
+  notifyAlertsChanged();
 }
 
 export async function resolveAlert(alertId: number) {
   await api.post(`/api/alerts/${alertId}/resolve`);
+  notifyAlertsChanged();
 }
 
 export interface Guest {
@@ -296,8 +308,29 @@ export interface EmbedResult {
 }
 
 export async function embedFaceForGuest(guestId: number, frameB64: string): Promise<EmbedResult> {
-  const { data } = await api.post<EmbedResult>(`/api/guests/${guestId}/embed`, { frame_b64: frameB64 });
+  // verify=true (default): server rejects a face that doesn't match the guest's
+  // existing photos, preventing two people being merged into one profile.
+  const { data } = await api.post<EmbedResult>(
+    `/api/guests/${guestId}/embed`,
+    { frame_b64: frameB64 }
+  );
   return data;
+}
+
+export interface GuestEmbedding {
+  id: number;
+  source: string;
+  quality_score: number | null;
+  created_at: string | null;
+}
+
+export async function fetchGuestEmbeddings(guestId: number): Promise<GuestEmbedding[]> {
+  const { data } = await api.get<GuestEmbedding[]>(`/api/guests/${guestId}/embeddings`);
+  return data;
+}
+
+export async function deleteGuestEmbedding(guestId: number, embeddingId: number): Promise<void> {
+  await api.delete(`/api/guests/${guestId}/embeddings/${embeddingId}`);
 }
 
 export interface ServiceSummary {

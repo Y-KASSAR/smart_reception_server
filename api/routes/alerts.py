@@ -3,7 +3,7 @@ Alert Routes
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from database.connection import get_db
 from database.repositories import AlertRepository
 from database.models import AlertType
@@ -14,8 +14,9 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[AlertResponse])
-def list_alerts(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), _=Depends(get_current_staff)):
-    return AlertRepository.get_all(db, skip=skip, limit=limit)
+def list_alerts(skip: int = 0, limit: int = 100, status: Optional[str] = None,
+                db: Session = Depends(get_db), _=Depends(get_current_staff)):
+    return AlertRepository.get_all(db, skip=skip, limit=limit, status=status)
 
 
 @router.get("/pending", response_model=List[AlertResponse])

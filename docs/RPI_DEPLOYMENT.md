@@ -188,6 +188,13 @@ ipconfig | findstr IPv4
 …and substitute that value above. `API_KEY` must match exactly what's in
 the laptop's `.env` file (project root).
 
+> **HTTPS option.** When the laptop runs the Caddy reverse proxy (`Caddyfile`,
+> see the HTTPS/TLS section of `disaster_recovery.md`), the Pi can talk to the
+> server over TLS by setting `SERVER_URL=https://192.168.1.50` (port 443, no
+> `:5000`). If the proxy uses `tls internal`, install Caddy's local CA on the Pi
+> (`caddy trust`) or point the client at the proxy's CA bundle so the cert
+> validates. Plain `http://…:5000` to the app still works on a trusted LAN.
+
 ---
 
 ## 8 — One-shot manual test (before installing the service)

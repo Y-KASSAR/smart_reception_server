@@ -1,6 +1,16 @@
 from sqlalchemy.orm import Session
-from database.models import Service
-from typing import List, Optional
+from database.models import Service, Recommendation, RecommendationStatus
+from typing import Dict, List, Optional
+
+
+# Popularity is derived from recommendation outcomes using a Laplace-smoothed
+# acceptance rate (a Beta(1, 1) prior). With no history a service sits at the
+# neutral 0.5; as guests accept/decline it, the score converges to the true
+# acceptance ratio accepted / (accepted + declined). Smoothing keeps a service
+# that was shown once and accepted once (1/1) from outranking one shown 100
+# times and accepted 80 — the prior pulls low-volume services toward 0.5.
+_POP_PRIOR_ACCEPT = 1.0   # alpha
+_POP_PRIOR_TOTAL = 2.0    # alpha + beta
 
 
 class ServiceRepository:
@@ -46,6 +56,51 @@ class ServiceRepository:
                 db.rollback()  # adjusted
                 raise  # adjusted
         return service
+
+    # ------------------------------------------------------------------
+    # Statistics-driven popularity
+    # ------------------------------------------------------------------
+    @staticmethod
+    def popularity_from_stats(accepted: int, declined: int) -> float:
+        """Laplace-smoothed acceptance rate, rounded to [0, 1]."""
+        score = (accepted + _POP_PRIOR_ACCEPT) / (accepted + declined + _POP_PRIOR_TOTAL)
+        return round(score, 4)
+
+    @staticmethod
+    def recompute_popularity(db: Session, service_id: Optional[int] = None) -> Dict[int, float]:
+        """Recompute ``popularity_score`` from recommendation statistics.
+
+        Counts ACCEPTED vs DECLINED recommendations per service and stores the
+        smoothed acceptance rate back on the row. Pass ``service_id`` to refresh
+        a single service (e.g. right after a guest responds to one of its
+        recommendations); omit it to recompute the whole catalogue.
+
+        Returns ``{service_id: new_score}`` for the services touched.
+        """
+        query = db.query(Service)
+        if service_id is not None:
+            query = query.filter(Service.id == service_id)
+        services = query.all()
+
+        results: Dict[int, float] = {}
+        for svc in services:
+            accepted = db.query(Recommendation).filter(
+                Recommendation.service_id == svc.id,
+                Recommendation.status == RecommendationStatus.ACCEPTED,
+            ).count()
+            declined = db.query(Recommendation).filter(
+                Recommendation.service_id == svc.id,
+                Recommendation.status == RecommendationStatus.DECLINED,
+            ).count()
+            svc.popularity_score = ServiceRepository.popularity_from_stats(accepted, declined)
+            results[svc.id] = svc.popularity_score
+
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        return results
 
     @staticmethod
     def delete(db: Session, service_id: int) -> bool:

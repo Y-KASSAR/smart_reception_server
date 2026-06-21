@@ -232,12 +232,24 @@ class CentroidTracker:
     computation in a low-traffic lobby.
     """
 
-    def __init__(self, max_disappeared: int = 8, max_distance: float = 250.0):
+    def __init__(self, max_disappeared: int = 8, max_distance: float = 250.0,
+                 bbox_smoothing: Optional[float] = None,
+                 bbox_deadband_px: Optional[float] = None):
         self._next_id = 1
-        self._objects: Dict[int, Tuple[int, int]] = {}      # id -> centroid
+        self._objects: Dict[int, Tuple[int, int]] = {}      # id -> centroid (raw)
         self._disappeared: Dict[int, int] = {}              # id -> frames missing
         self._max_disappeared = max_disappeared
         self._max_distance = max_distance
+        # Anti-jitter bbox smoothing state: id -> smoothed (x, y, w, h) as floats.
+        self._bboxes: Dict[int, Tuple[float, float, float, float]] = {}
+        # EMA weight on the newest frame (1.0 = no smoothing); read from config
+        # but overridable for tests.
+        smoothing = (bbox_smoothing if bbox_smoothing is not None
+                     else getattr(settings.detection, "bbox_smoothing", 0.4))
+        self._smoothing = min(1.0, max(0.0, float(smoothing)))
+        deadband = (bbox_deadband_px if bbox_deadband_px is not None
+                    else getattr(settings.detection, "bbox_deadband_px", 2.0))
+        self._deadband = max(0.0, float(deadband))
 
     def update(self, detections: List[PersonDetection]) -> List[PersonDetection]:
         """
@@ -250,11 +262,13 @@ class CentroidTracker:
                 if self._disappeared[tid] > self._max_disappeared:
                     self._objects.pop(tid, None)
                     self._disappeared.pop(tid, None)
+                    self._bboxes.pop(tid, None)
             return detections
 
         if not self._objects:
             for det in detections:
                 det.track_id = self._register(det.centroid)
+                det.bbox = self._smooth_bbox(det.track_id, det.bbox)
             return detections
 
         existing_ids = list(self._objects.keys())
@@ -275,9 +289,13 @@ class CentroidTracker:
                     best_di = di
             if best_di >= 0:
                 tid = existing_ids[ei]
-                detections[best_di].track_id = tid
-                self._objects[tid] = detections[best_di].centroid
+                det = detections[best_di]
+                det.track_id = tid
+                # Store the RAW centroid for next-frame matching (must happen
+                # before we replace the bbox with its smoothed version).
+                self._objects[tid] = det.centroid
                 self._disappeared[tid] = 0
+                det.bbox = self._smooth_bbox(tid, det.bbox)
                 used_existing.add(tid)
                 used_new.add(best_di)
 
@@ -286,6 +304,7 @@ class CentroidTracker:
             if di in used_new:
                 continue
             det.track_id = self._register(det.centroid)
+            det.bbox = self._smooth_bbox(det.track_id, det.bbox)
 
         # Increment disappeared for unmatched existing tracks
         for tid in existing_ids:
@@ -295,6 +314,7 @@ class CentroidTracker:
             if self._disappeared[tid] > self._max_disappeared:
                 self._objects.pop(tid, None)
                 self._disappeared.pop(tid, None)
+                self._bboxes.pop(tid, None)
 
         return detections
 
@@ -305,9 +325,31 @@ class CentroidTracker:
         self._disappeared[tid] = 0
         return tid
 
+    def _smooth_bbox(self, tid: int, raw_bbox: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
+        """Exponential-moving-average a track's bbox to kill per-frame jitter.
+
+        A new track is seeded with its raw box. For subsequent frames, if every
+        corner moved less than the deadband the previous box is held verbatim
+        (a stationary person shows zero shimmer); otherwise the box eases toward
+        the new detection at the configured smoothing weight.
+        """
+        raw = tuple(float(v) for v in raw_bbox)
+        prev = self._bboxes.get(tid)
+        if prev is None or self._smoothing >= 1.0:
+            self._bboxes[tid] = raw
+            return tuple(int(round(v)) for v in raw)
+        # Deadband — hold steady for sub-threshold movement.
+        if self._deadband > 0 and max(abs(n - p) for n, p in zip(raw, prev)) < self._deadband:
+            return tuple(int(round(v)) for v in prev)
+        a = self._smoothing
+        smoothed = tuple(a * n + (1.0 - a) * p for n, p in zip(raw, prev))
+        self._bboxes[tid] = smoothed
+        return tuple(int(round(v)) for v in smoothed)
+
     def reset(self) -> None:
         self._objects.clear()
         self._disappeared.clear()
+        self._bboxes.clear()
         self._next_id = 1
 
     @property

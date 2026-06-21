@@ -21,8 +21,17 @@ class AlertRepository:
         return db.query(Alert).filter(Alert.id == alert_id).first()
     
     @staticmethod
-    def get_all(db: Session, skip: int = 0, limit : int= 100)-> List[Alert]:
-        return db.query(Alert).order_by(Alert.created_at.desc()).offset(skip).limit(limit).all()
+    def get_all(db: Session, skip: int = 0, limit: int = 100,
+                status: Optional[str] = None) -> List[Alert]:
+        q = db.query(Alert)
+        if status:
+            # Tolerate an unknown/garbage status by ignoring the filter rather
+            # than 500-ing; the UI only ever sends valid AlertStatus values.
+            try:
+                q = q.filter(Alert.status == AlertStatus(status))
+            except ValueError:
+                pass
+        return q.order_by(Alert.created_at.desc()).offset(skip).limit(limit).all()
     
     @staticmethod
     def get_pending_alerts(db : Session)-> List[Alert]:

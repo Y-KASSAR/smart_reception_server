@@ -14,6 +14,7 @@
 | `.env` | Local secrets (JWT key, API key, optional SMTP/Twilio creds). Gitignored. |
 | `.env.example` | Template for `.env`. |
 | `requirements.txt` | Pinned Python dependencies. |
+| `Caddyfile` | Caddy reverse-proxy config providing **HTTPS/WSS** (NFR-2.2 / NFR-2.3). Terminates TLS in front of the app on `127.0.0.1:5000` and upgrades `/ws` to WSS. Site blocks for `localhost`, LAN IP (`tls internal`), and public domain (Let's Encrypt). Run with `caddy run`. |
 | `README.md` | Project overview, install, troubleshooting. |
 | `yolov8n.pt` | Pre-downloaded YOLOv8n weights (6.5 MB) — Ultralytics format. |
 | `.gitignore` | Excludes venv, node_modules, .env, logs, caches. |
@@ -95,7 +96,8 @@
 | `modules/recognition/face_recognizer.py` | MTCNN + InceptionResnetV1 wrapper. In-memory embedding cache, hydrated on startup. Vectorised cosine matcher (`_emb_matrix`). Bbox-validation pass in `detect_faces` to avoid degenerate-bbox crashes. |
 | `modules/recognition/_facenet_patch.py` | Runtime monkey-patch for two bugs in upstream `facenet-pytorch.detect_face` (stage-2/3 off-by-N IndexError + degenerate-bbox extract_face crash). Idempotent; called once at engine init. |
 | `modules/monitoring/person_monitor.py` | `TrackedPerson` dataclass + `PersonMonitor` with dwell-time thresholds. Skips alert firing for staff-badged tracks. `tracking_timeout` set to 8 s. |
-| `modules/alerts/alert_notifier.py` | Event-bus subscriber. Persists each alert via `AlertRepository.create` then dispatches via email + SMS. **Console-fallback mode** writes JSON lines to `logs/outbox/{email,sms}.log` when real channels aren't configured. Per-guest cooldown shared across all alert kinds. |
+| `modules/alerts/alert_notifier.py` | Event-bus subscriber. Persists each alert via `AlertRepository.create` then dispatches via email + SMS/WhatsApp. Email recipients are **blind-copied (Bcc)**. **Console-fallback mode** writes JSON lines to `logs/outbox/{email,sms}.log` when real channels aren't configured. Per-guest cooldown shared across all alert kinds. |
+| `modules/alerts/notification_templates.py` | Per-incident notification templates for **both** channels: `render_alert_email()` (subject + HTML + text) and `render_whatsapp()`. One `_INCIDENTS` table gives each `AlertType` a consistent icon, label, accent colour and call to action. |
 | `modules/upselling/recommendation_engine.py` | 7-rule scoring engine (R1 popularity + R2 VIP boost + R3 dietary + R4 room-type + R5 Arabic-dining + R6 winback bundle + R7 business-booking pattern). Each rule attaches its rationale string. |
 | `modules/speech/translator.py` | faster-whisper-small wrapper. `task="translate"` always outputs English. Beam 5, temperature 0, initial-prompt biased for colloquial Lebanese Arabic / French / English. |
 | `modules/speech/__init__.py` | Re-exports the `speech_translator` singleton. |
@@ -179,6 +181,9 @@
 |---|---|
 | `scripts/seed_database.py` | Inserts default staff accounts. |
 | `scripts/seed_services.py` | Inserts 13 sample hotel services. |
+| `scripts/seed_mock_guests.py` | Inserts **100 mock guests** (varied locales/VIP/status, ~4% watch-listed) + ~400 recommendation interactions, then recomputes statistics-driven popularity. **Does not** mock face embeddings. Idempotent. |
+| `scripts/send_test_whatsapp.py` | Manual Twilio WhatsApp/SMS send test driving the real `send_sms()` path; reports the Twilio SID/status. |
+| `scripts/build_changelog_docx.py` | Generates the v1.2 change-log addendum `.docx` for the Final Submission folder. |
 | `scripts/seed_reservations.py` | Inserts 5 sample reservations + companion guests (2 in-house, 2 arrivals, 3 departures). |
 | `scripts/import_pms.py` | Idempotent CSV upsert of guests + reservations. Includes `--generate-sample` (12 guests + 10 reservations) and `--dry-run`. |
 | `scripts/backup_database.py` | Manual DB backup invocation. |
@@ -189,7 +194,7 @@
 | `scripts/smoke_test_today.py` | 60-check end-to-end regression covering every shipped feature. |
 | `scripts/smoke_test_e2e.ps1` | 23-endpoint PowerShell smoke test (baseline). |
 | `scripts/laptop_edge.py` | Mock edge client driven by laptop webcam — useful for dev when the Pi isn't on the network. |
-| `scripts/generate_self_signed_cert.py` | Generates a self-signed cert for the deferred HTTPS migration. |
+| `scripts/generate_self_signed_cert.py` | Generates a self-signed cert for the direct-uvicorn HTTPS path (alternative to the Caddy reverse proxy, which is the primary HTTPS/WSS mechanism — see `Caddyfile`). |
 
 ---
 

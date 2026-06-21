@@ -29,6 +29,7 @@ smart_reception_server/
 ├── .env                  Local secrets (gitignored)
 ├── .env.example          Template for the above
 ├── config.yaml           Runtime settings (thresholds, model choices)
+├── Caddyfile             Caddy reverse proxy → HTTPS/WSS (NFR-2.2/2.3)
 ├── requirements.txt      Pinned Python dependencies
 ├── server_app.py         Server entry point
 ├── yolov8n.pt            Pre-downloaded YOLOv8n weights (6.5 MB)
@@ -75,8 +76,11 @@ modules/
 │   │                        cosine matcher (vectorised matrix path)
 │   └── _facenet_patch.py    Runtime monkey-patch fixing 2 upstream MTCNN bugs
 ├── monitoring/           PersonMonitor (dwell + staff badge + thresholds)
-├── alerts/               AlertNotifier (event_bus subscriber → DB row + email/SMS)
-├── upselling/            RecommendationEngine (7 scoring rules, R1–R7)
+├── alerts/               AlertNotifier (event_bus subscriber → DB row + email/SMS/WhatsApp;
+│                         email recipients Bcc'd) + notification_templates (per-incident
+│                         email + WhatsApp bodies)
+├── upselling/            RecommendationEngine (7 scoring rules, R1–R7; R1 popularity
+│                         baseline is statistics-driven via recompute_popularity)
 └── speech/               SpeechTranslator wrapping faster-whisper-small
 ```
 
@@ -212,7 +216,10 @@ utils/
 |---|---|---|
 | `seed_database.py` | Default staff accounts | NFR-2.6 |
 | `seed_services.py` | 13 sample hotel services | FR-2.3 |
+| `seed_mock_guests.py` | 100 mock guests + ~400 recommendation interactions → statistics-driven popularity (no face embeddings) | FR-1 / FR-2.3 |
 | `seed_reservations.py` | 5 sample reservations (In-House / Arrivals / Departures demo) | FR-1.8 |
+| `send_test_whatsapp.py` | Manual Twilio WhatsApp/SMS send test (real `send_sms()` path) | FR-4.6 / NFR-1.6 |
+| `build_changelog_docx.py` | Generate the v1.2 change-log addendum `.docx` | docs |
 | `import_pms.py` | Idempotent CSV upsert of guests + reservations (with `--generate-sample` + `--dry-run`) | FR-6 PMS sync |
 | `backup_database.py` | Manual DB backup invocation | NFR-3.6 |
 | `preload_facenet.py` | One-shot model weight download | bootstrap |
@@ -222,7 +229,7 @@ utils/
 | `smoke_test_today.py` | 60-check end-to-end regression of every shipped feature | NFR-3 |
 | `smoke_test_e2e.ps1` | 23-endpoint PowerShell smoke (baseline) | NFR-3 |
 | `laptop_edge.py` | Mock edge client driven by laptop webcam (dev) | dev |
-| `generate_self_signed_cert.py` | Self-signed cert for future HTTPS | NFR-2.2 (future) |
+| `generate_self_signed_cert.py` | Self-signed cert for the direct-uvicorn HTTPS path (Caddy reverse proxy is primary — see `Caddyfile`) | NFR-2.2 |
 
 Every script in this folder maps to a requirement or to a project bootstrap step. Submission artefacts (report, slides) live outside the runtime repository.
 
@@ -286,6 +293,7 @@ python scripts/preload_facenet.py
 python scripts/seed_database.py
 python scripts/seed_services.py
 python scripts/seed_reservations.py
+python scripts/seed_mock_guests.py                # optional: 100 mock guests for full-system testing
 python server_app.py                              # serves on :5000
 
 # 2. Frontend (only if you intend to modify it; dist/ is pre-built)

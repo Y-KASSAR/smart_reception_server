@@ -35,8 +35,8 @@ files in the repository, with status.
 | **C5** | Person Detector | [detection/person_detector.py](detection/person_detector.py) | **MET** | YOLOv8n on **CUDA (device='0', imgsz=960)**, conf=0.5. CentroidTracker **tuned in** (`max_distance: 80→250`, `max_disappeared: 30→8`) to eliminate ghost-track inflation. Verified during live testing. |
 | **C6** | Face Recognition | [modules/recognition/face_recognizer.py](modules/recognition/face_recognizer.py) | **MET** | MTCNN + InceptionResnetV1 (512-D) **on CUDA**. Threshold raised to 0.80. Vectorised embedding matrix added (`_emb_matrix`) for O(1) batch matching. Custom monkey-patch in [_facenet_patch.py](modules/recognition/_facenet_patch.py) fixes upstream stage-2/3 IndexError + degenerate-bbox crash. |
 | **C7** | Database Module | [database/connection.py](database/connection.py) + [models.py](database/models.py) + [repositories/](database/repositories/) | **MET** | **schema additions** to `Guest`: `id_type`, `id_number`, `is_watched`, `watch_reason`, `is_staff_badge`, `staff_badge_label`. SQLite ALTER TABLE migrations applied in place. `_utcnow()` switched to local-time `datetime.now()` to fix dashboard timestamp drift. |
-| **C8** | Recommendation Engine | [modules/upselling/recommendation_engine.py](modules/upselling/recommendation_engine.py) | **MET** | 6 rules now (R1 popularity, R2 VIP boost, R3 dietary, R4 room-type, R5 Arabic-dining, **R6 winback bundle** for returning non-in-house guests — boosts their past-accepted services +0.30 with bundled premium room-rate narrative). |
-| **C9** | Alert Manager | [modules/alerts/alert_notifier.py](modules/alerts/alert_notifier.py) | **MET** | Now subscribes to `watchlist_match` event topic too. Persists `AlertType.WANTED` rows with full audit trail. Per-guest cooldown shared with other handlers. |
+| **C8** | Recommendation Engine | [modules/upselling/recommendation_engine.py](modules/upselling/recommendation_engine.py) | **MET** | 6 rules now (R1 popularity, R2 VIP boost, R3 dietary, R4 room-type, R5 Arabic-dining, **R6 winback bundle** for returning non-in-house guests — boosts their past-accepted services +0.30 with bundled premium room-rate narrative). The **R1 popularity baseline is now statistics-driven** — `ServiceRepository.recompute_popularity()` derives `popularity_score` from recommendation accept/decline outcomes (Laplace-smoothed acceptance rate). |
+| **C9** | Alert Manager | [modules/alerts/alert_notifier.py](modules/alerts/alert_notifier.py) | **MET** | Now subscribes to `watchlist_match` event topic too. Persists `AlertType.WANTED` rows with full audit trail. Per-guest cooldown shared with other handlers. **Per-incident notification templates** ([notification_templates.py](modules/alerts/notification_templates.py)) drive both email (branded HTML + text) and **WhatsApp/SMS** (Twilio, incl. WhatsApp Sandbox). Email recipients are **blind-copied (Bcc)**. |
 | **C10** | Lobby Monitor | [modules/monitoring/person_monitor.py](modules/monitoring/person_monitor.py) | **MET** | `TrackedPerson.is_staff_badge` ; `check_thresholds()` short-circuits for badged tracks (admin-only alert suppression for off-duty managers). `tracking_timeout` tightened from 30s → 8s. |
 | **C11** | Network Server | [api/app.py](api/app.py) + **15 routers** (added `audio`) | **MET** | FastAPI app, CORS, lifespan with **face_engine embedding cache hydration on startup** (added — fixed empty-cache bug on restart), SPA fallback. |
 | **C12** | Live Feed (frontend) | [LiveFeedPanel.tsx](frontend/src/components/LiveFeed/LiveFeedPanel.tsx) | **MET** | Canvas overlay now paints **4-tier color scheme** (blue staff / red watched / green known / gold unknown). Pulsing red "WATCHLIST MATCH" banner overlay when a watched guest is in frame. Per-bbox `is_staff_badge` / `is_watched` / `guest_id` from the enriched detection payload. |
@@ -164,7 +164,7 @@ SDD specifies the layout as: **Top NavBar across the width + Sidebar below it**.
 |---|---|---|
 | §8.1 Guest identification | **MET** | Edge → /api/edge/frame → person_detector → face_engine → person_monitor → WS broadcast. Verified by manual trace. |
 | §8.2 Recommendation generation | **MET** | `/api/recommendations/generate/{guest_id}` calls `recommendation_engine.recommend_for_guest()` then `save_recommendations()`. |
-| §8.3 Alert workflow (security/assistance) | **MET** | `person_monitor.check_thresholds()` → event_bus → `alert_notifier._on_*` → AlertRepository + email + SMS + WS. |
+| §8.3 Alert workflow (security/assistance) | **MET** | `person_monitor.check_thresholds()` → event_bus → `alert_notifier._on_*` → AlertRepository + email (Bcc, per-incident templates) + SMS/WhatsApp + WS. |
 
 ---
 
@@ -190,7 +190,7 @@ SDD specifies the layout as: **Top NavBar across the width + Sidebar below it**.
 | RBAC via `require_role()` | **MET** | applied to admin-only endpoints; verified by smoke test |
 | Edge X-API-Key | **MET** | `_verify_api_key()` dependency on `/api/edge/*` |
 | Embedding encryption at rest | **MET** | **Implemented as AES-256-GCM** per NFR-2.1. Framing: `[version=0x01][12B nonce][ciphertext+16B GCM tag]`, base64-encoded. Backward-compatible with legacy Fernet rows and plaintext rows. Key parsed from `ENCRYPTION_KEY` as 32 raw bytes / 64 hex / 44 base64. See `utils/crypto_utils.py`. |
-| HTTPS / WSS | **DEFERRED** | LAN HTTP for now |
+| HTTPS / WSS | **MET** | TLS terminated by a **Caddy reverse proxy** (`Caddyfile` in repo root) fronting the app on `127.0.0.1:5000`; `/ws` upgrades to WSS automatically. `localhost`/`tls internal`/Let's Encrypt site blocks provided. |
 | Rate limiting | **MET** | `staff.py:_check_login_rate_limit()` per-IP sliding window |
 | CORS allow-list | **MET** | localhost:5173 + localhost:3000 + 127.0.0.1 variants |
 | Audit log of auth attempts | **MET** | logged via logger; not stored to DB |
@@ -248,6 +248,9 @@ Pi. The system is demo-ready and exceeds every original NFR-1 performance
 target.
 
 Outstanding work:
-8-hour stability run, formal TPR/FPR accuracy benchmark, HTTPS/WSS transport,
-SMTP/SMS channel verification with real credentials, persistent identification
-log table, and R7 business-booking-pattern recommendation rule.
+8-hour stability run, formal TPR/FPR accuracy benchmark, persistent
+identification log table, and R7 business-booking-pattern recommendation rule.
+(SMTP email and Twilio **WhatsApp** channels are now wired and verified against
+real credentials; the WhatsApp Sandbox path is exercised by
+`scripts/send_test_whatsapp.py`. **HTTPS/WSS transport is now provided by a
+Caddy reverse proxy** — see `Caddyfile`.)

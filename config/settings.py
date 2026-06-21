@@ -49,11 +49,28 @@ class DetectionConfig:
     nms_iou_threshold: float = 0.4
     device: str = "auto"          # "auto" -> CUDA if available, else CPU
     inference_width: int = 960    # YOLO imgsz; smaller = faster, lower latency
+    # Bounding-box temporal smoothing (anti-jitter for the live overlay).
+    # Each track's box is an exponential moving average of its raw detections:
+    # smoothing is the weight on the NEW frame. Lower = steadier but laggier;
+    # 1.0 disables smoothing entirely. 0.4 is a good steady/responsive balance.
+    bbox_smoothing: float = 0.4
+    # Deadband (pixels, in frame space): if every corner of the new box moves
+    # less than this vs the held box, the box is kept perfectly still — so a
+    # stationary person shows zero shimmer. Set 0 to disable the deadband.
+    bbox_deadband_px: float = 2.0
 @dataclass
 class RecognitionConfig:
     detection_model: str = "mtcnn"
     recognition_model: str = "facenet"
     similarity_threshold: float = 0.70
+    # Same-person gate used when ADDING a face to a guest that already has
+    # embeddings: the new face must score at least this cosine similarity
+    # against the guest's existing faces, otherwise the add is rejected to
+    # avoid mixing two people into one profile. Deliberately LOWER than
+    # similarity_threshold — different people score ~0.0–0.4 while the same
+    # person at a new angle still scores ~0.5–0.9, so 0.5 separates them
+    # without rejecting legitimate new poses.
+    enroll_verify_threshold: float = 0.5
     max_embeddings_per_guest: int = 5
     re_recognition_interval: int = 30
     # Real-time tuning: run the expensive FaceNet pass only every Nth frame.
@@ -63,6 +80,14 @@ class RecognitionConfig:
     # Downscale width for MTCNN face DETECTION (crops for embedding extraction
     # are still taken at full resolution). 0 = no downscale.
     inference_width: int = 960
+    # MTCNN minimum detectable face size (px). Smaller = detects faces further
+    # away / smaller in frame (helps recall) at some extra compute cost.
+    min_face_size: int = 20
+    # MTCNN cascade confidence thresholds [P-Net, R-Net, O-Net]. The library
+    # default is [0.6, 0.7, 0.7]; relaxing the later stages lets the detector
+    # keep faces at an angle / partially turned (≈30–45° yaw) that the stricter
+    # default would discard. Lower = more pose-tolerant detection.
+    detection_thresholds: List[float] = field(default_factory=lambda: [0.6, 0.6, 0.6])
 @dataclass
 class MonitoringConfig:
     security_dwell_threshold: int = 600
@@ -99,10 +124,21 @@ class SecretsConfig:
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
+    # STARTTLS toggle. Most public relays (Gmail/Office365 on :587) require it,
+    # but plain relays (a local postfix on :25, or a capture/sink server used
+    # for latency verification) speak unencrypted SMTP. Default True.
+    smtp_use_tls: bool = True
+    # Friendly From display name. The mailbox may be a generic gmail.com
+    # address, but recipients see this name in their inbox — keep it branded.
+    smtp_from_name: str = "Smart Reception"
     alert_email_recipients: List[str] = field(default_factory=list)
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from_number: str = ""
+    # Messaging channel: "sms" (default) or "whatsapp". For the WhatsApp
+    # Sandbox the from/to numbers must be sent with a "whatsapp:" prefix and
+    # the From is Twilio's shared sandbox number (e.g. +14155238886).
+    twilio_channel: str = "sms"
     alert_sms_recipients: List[str] = field(default_factory=list)
     encryption_key: str = ""
     default_admin_username: str = "admin"
@@ -158,10 +194,13 @@ class Settings :
             smtp_port=int(os.getenv("SMTP_PORT", "587")),
             smtp_username=os.getenv("SMTP_USERNAME", ""),
             smtp_password=os.getenv("SMTP_PASSWORD", ""),
+            smtp_use_tls=os.getenv("SMTP_USE_TLS", "true").strip().lower() not in ("0", "false", "no", ""),
+            smtp_from_name=os.getenv("SMTP_FROM_NAME", "Smart Reception"),
             alert_email_recipients=[e.strip() for e in email_recipients_str.split(",") if e.strip()],
             twilio_account_sid=os.getenv("TWILIO_ACCOUNT_SID", ""),
             twilio_auth_token=os.getenv("TWILIO_AUTH_TOKEN", ""),
             twilio_from_number=os.getenv("TWILIO_FROM_NUMBER", ""),
+            twilio_channel=os.getenv("TWILIO_CHANNEL", "sms").strip().lower(),
             alert_sms_recipients=[p.strip() for p in sms_recipients_str.split(",") if p.strip()],
             encryption_key=os.getenv("ENCRYPTION_KEY", ""),
             default_admin_username=os.getenv("DEFAULT_ADMIN_USERNAME", "admin"),

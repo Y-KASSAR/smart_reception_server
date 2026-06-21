@@ -136,11 +136,20 @@ class FaceRecognitionEngine:
                 from modules.recognition import _facenet_patch
                 _facenet_patch.apply()
                 from facenet_pytorch import MTCNN, InceptionResnetV1
+                # Pose-tolerance knobs (FR-1): a smaller min_face_size and
+                # relaxed cascade thresholds keep faces turned ~30–45° that the
+                # stricter defaults would drop. Embedding matching still gates
+                # recognition, so looser detection alone can't cause a false ID.
+                min_face_size = int(getattr(settings.recognition, "min_face_size", 20) or 20)
+                thresholds = list(getattr(settings.recognition, "detection_thresholds", None)
+                                  or [0.6, 0.7, 0.7])
                 self._mtcnn = MTCNN(
                     image_size=160,
                     margin=14,
                     keep_all=True,
                     post_process=True,
+                    min_face_size=min_face_size,
+                    thresholds=thresholds,
                     device=self._device,
                 )
                 self._resnet = (
@@ -376,6 +385,52 @@ class FaceRecognitionEngine:
         except Exception as e:
             logger.error(f"detect_faces failed: {e}", exc_info=True)
             return []
+
+    def guest_embedding_vectors(self, db: Session, guest_id: int) -> list[np.ndarray]:
+        """Read a guest's stored face vectors straight from the DB (decrypted).
+
+        Reads from the database rather than the in-memory cache so verification
+        is correct even if the cache hasn't been reloaded since the last change.
+        """
+        rows = FaceEmbeddingRepository.get_by_guest(db, guest_id)
+        out: list[np.ndarray] = []
+        for fe in rows:
+            v = self._deserialize(fe.embedding_vector)
+            if v is not None:
+                out.append(v)
+        return out
+
+    def verify_match(
+        self,
+        frame: np.ndarray,
+        guest_id: int,
+        db: Session,
+        threshold: Optional[float] = None,
+    ) -> dict:
+        """Quick "is this the same person?" check before adding a face.
+
+        Compares the largest face in ``frame`` against the guest's existing
+        embeddings. Returns a dict:
+            face_found  : a face was detected in the frame
+            no_baseline : guest has no existing embeddings (nothing to compare)
+            similarity  : best cosine similarity to the guest's stored faces
+            is_match    : similarity >= threshold (or True when no baseline)
+        """
+        thr = float(threshold if threshold is not None
+                    else getattr(settings.recognition, "enroll_verify_threshold", 0.5))
+        faces = self.detect_faces(frame)
+        if not faces:
+            return {"face_found": False, "no_baseline": False,
+                    "similarity": 0.0, "is_match": False, "threshold": thr}
+        face = max(faces, key=lambda f: f.bbox[2] * f.bbox[3])
+        existing = self.guest_embedding_vectors(db, guest_id)
+        if not existing:
+            return {"face_found": True, "no_baseline": True,
+                    "similarity": 0.0, "is_match": True, "threshold": thr}
+        best = max(self._cosine_similarity(face.embedding, v) for v in existing)
+        return {"face_found": True, "no_baseline": False,
+                "similarity": round(float(best), 4), "is_match": best >= thr,
+                "threshold": thr}
 
     def recognize(self, frame: np.ndarray, db: Optional[Session] = None) -> list[RecognitionResult]:
         """End-to-end: detect every face in the frame and match each one.

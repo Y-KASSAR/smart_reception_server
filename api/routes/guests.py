@@ -289,12 +289,18 @@ def delete_guest(guest_id: int, db: Session = Depends(get_db), _=Depends(require
 def enroll_guest_face(
     guest_id: int,
     payload: EmbedPayload,
+    verify: bool = True,
     db: Session = Depends(get_db),
     _=Depends(get_current_staff),
 ):
     """
     Upload a face image for a guest and persist its embedding (SDD §4.2.2,
     SysRS FR-1.11 / FR-1.12). Body: { frame_b64: <base64 JPEG/PNG> }.
+
+    When the guest already has at least one embedding and ``verify`` is true
+    (the default), the new face is checked against the existing ones first: if
+    it doesn't look like the same person it is rejected (409) so a different
+    person can't be merged into this profile by mistake.
     """
     guest = GuestRepository.get_by_id(db, guest_id)
     if not guest:
@@ -324,6 +330,23 @@ def enroll_guest_face(
         raise HTTPException(status_code=400, detail="Could not decode frame image")
 
     from modules.recognition import face_engine
+
+    # Same-person gate: only when there's an existing baseline to compare to.
+    if verify and existing > 0:
+        check = face_engine.verify_match(frame, guest_id=guest_id, db=db)
+        if not check["face_found"]:
+            raise HTTPException(status_code=422, detail="No face detected in the image.")
+        if not check["is_match"]:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This face does not match {guest.full_name or 'this guest'}'s "
+                    f"existing photos (best match {check['similarity'] * 100:.0f}% < "
+                    f"{check['threshold'] * 100:.0f}% required). Add rejected to "
+                    f"prevent mixing two people into one profile."
+                ),
+            )
+
     success = face_engine.enroll(frame, guest_id=guest_id, db=db)
     if not success:
         raise HTTPException(status_code=422, detail="No face detected or embedding extraction failed")
@@ -333,3 +356,45 @@ def enroll_guest_face(
         "embeddings_total": FaceEmbeddingRepository.count_for_guest(db, guest_id),
         "status": "enrolled",
     }
+
+
+@router.get("/{guest_id}/embeddings")
+def list_guest_embeddings(
+    guest_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_staff),
+):
+    """List metadata for a guest's stored face embeddings (no vectors)."""
+    guest = GuestRepository.get_by_id(db, guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    rows = FaceEmbeddingRepository.get_by_guest(db, guest_id)
+    return [
+        {
+            "id": fe.id,
+            "source": fe.source,
+            "quality_score": fe.quality_score,
+            "created_at": fe.created_at.isoformat() if fe.created_at else None,
+        }
+        for fe in sorted(rows, key=lambda e: e.created_at or 0)
+    ]
+
+
+@router.delete("/{guest_id}/embeddings/{embedding_id}", status_code=204)
+def delete_guest_embedding(
+    guest_id: int,
+    embedding_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_staff),
+):
+    """Delete one stored face embedding from a guest, then refresh the cache."""
+    emb = FaceEmbeddingRepository.get_by_id(db, embedding_id)
+    if not emb or emb.guest_id != guest_id:
+        raise HTTPException(status_code=404, detail="Embedding not found for this guest")
+    FaceEmbeddingRepository.delete(db, embedding_id)
+    # Keep the live matcher in sync so the deleted face stops being recognized.
+    try:
+        from modules.recognition import face_engine
+        face_engine.load_guest_embeddings(db)
+    except Exception:
+        pass

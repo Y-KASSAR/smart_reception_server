@@ -3,11 +3,15 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft, Camera, Crown, Eye, EyeOff, FileImage, IdCard, Mail, Phone, Globe,
   FileText, BedDouble, ClipboardList, Shield, ShieldOff, Sparkles, Upload, DollarSign,
+  Trash2, ScanFace,
 } from "lucide-react";
 import {
   currentRole,
+  deleteGuestEmbedding,
   embedFaceForGuest,
+  fetchGuestEmbeddings,
   fetchGuestSummary,
+  GuestEmbedding,
   GuestSummary,
   setGuestWatchlist,
   setStaffBadge,
@@ -442,6 +446,16 @@ function FaceEnrollmentPanel({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState<"upload" | "lobby" | null>(null);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [embeddings, setEmbeddings] = useState<GuestEmbedding[]>([]);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const reloadEmbeddings = () => {
+    fetchGuestEmbeddings(guestId).then(setEmbeddings).catch(() => {});
+  };
+
+  useEffect(() => { reloadEmbeddings(); }, [guestId]);
+
+  const atCapacity = embeddings.length >= 5;
 
   function _stripDataUrl(d: string): string {
     const c = d.indexOf(",");
@@ -454,12 +468,34 @@ function FaceEnrollmentPanel({
     try {
       const r = await embedFaceForGuest(guestId, b64);
       setResult({ ok: true, msg: `Face added · ${r.embeddings_total}/5 stored` });
+      reloadEmbeddings();
       onUpdated();
     } catch (e: any) {
       const detail = e?.response?.data?.detail ?? "Embedding failed.";
       setResult({ ok: false, msg: detail });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function handleDelete(embId: number) {
+    if (!window.confirm(
+      "Delete this face embedding? Recognition will stop using it immediately.\n\n" +
+      "Tip: to refresh a guest's face data, add the new (better) photos FIRST — " +
+      "they're checked against the existing ones to confirm it's the same person — " +
+      "then delete the old ones."
+    )) return;
+    setDeletingId(embId);
+    setResult(null);
+    try {
+      await deleteGuestEmbedding(guestId, embId);
+      setResult({ ok: true, msg: "Embedding deleted." });
+      reloadEmbeddings();
+      onUpdated();
+    } catch (e: any) {
+      setResult({ ok: false, msg: e?.response?.data?.detail ?? "Delete failed." });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -490,25 +526,91 @@ function FaceEnrollmentPanel({
           <h3>Attach face to this profile</h3>
         </div>
         <div className="right t-caption" style={{ color: "var(--color-muted)" }}>
-          Max 5 embeddings · FR-1.12
+          {embeddings.length}/5 embeddings · FR-1.12
         </div>
       </div>
       <div className="panel-body padded">
         <p style={{ fontSize: 13, color: "var(--color-muted)", marginBottom: 14 }}>
           Add a face embedding so the recognition system can match <strong>{guestName}</strong>{" "}
           on arrival. Use a passport/ID scan, or grab the current lobby feed if they're at the desk now.
+          New faces are <strong>checked against the existing ones</strong> — if it isn't the same
+          person, the add is rejected so two people can't be merged into one profile.
         </p>
+
+        {/* Existing embeddings — delete to refresh a guest's face data */}
+        {embeddings.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div className="t-label" style={{ marginBottom: 8 }}>
+              Stored face embeddings
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {embeddings.map((e, i) => (
+                <div
+                  key={e.id}
+                  className="row"
+                  style={{
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "8px 12px",
+                    border: "1px solid var(--border-hairline)",
+                    borderRadius: 4,
+                    background: "var(--bg-canvas)",
+                  }}
+                >
+                  <div className="row" style={{ gap: 10, alignItems: "center", minWidth: 0 }}>
+                    <ScanFace size={16} style={{ color: "var(--color-muted)", flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>
+                        Face #{i + 1}
+                        <span style={{ color: "var(--color-muted)", fontWeight: 400 }}>
+                          {" · "}{e.source}
+                        </span>
+                      </div>
+                      <div className="t-caption tnum" style={{ color: "var(--color-muted)" }}>
+                        {e.quality_score != null ? `q=${e.quality_score.toFixed(2)} · ` : ""}
+                        {fmtDateTime(e.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={deletingId === e.id}
+                    onClick={() => handleDelete(e.id)}
+                    title="Delete this embedding"
+                    style={{ color: "#7a2a2a", flexShrink: 0 }}
+                  >
+                    <Trash2 size={13} /> {deletingId === e.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {atCapacity && (
+          <div
+            style={{
+              marginBottom: 14, padding: 10, borderRadius: 4, fontSize: 13,
+              background: "var(--color-assistance-bg)",
+              border: "1px solid var(--color-assistance-tint)",
+            }}
+          >
+            At the 5-embedding limit. Delete one above before adding a fresher photo.
+          </div>
+        )}
 
         <div className="grid-2col" style={{ gap: 12 }}>
           {/* Upload card */}
           <div
-            onClick={() => !busy && fileRef.current?.click()}
+            onClick={() => !busy && !atCapacity && fileRef.current?.click()}
             style={{
               padding: 18,
               border: "1.5px dashed var(--border-hairline)",
               borderRadius: 6,
               background: "rgba(0,30,60,0.02)",
-              cursor: busy ? "wait" : "pointer",
+              cursor: atCapacity ? "not-allowed" : busy ? "wait" : "pointer",
+              opacity: atCapacity ? 0.5 : 1,
               textAlign: "center",
             }}
           >
@@ -523,9 +625,10 @@ function FaceEnrollmentPanel({
               accept="image/jpeg,image/png,image/webp"
               style={{ display: "none" }}
               onChange={onFile}
+              disabled={atCapacity}
             />
             <div style={{ marginTop: 10 }}>
-              <span className="btn btn-primary btn-sm">
+              <span className="btn btn-primary btn-sm" style={atCapacity ? { pointerEvents: "none", opacity: 0.6 } : undefined}>
                 <Upload size={12} /> {busy === "upload" ? "Embedding…" : "Choose file"}
               </span>
             </div>
@@ -553,7 +656,7 @@ function FaceEnrollmentPanel({
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              disabled={!liveFeed || !!busy}
+              disabled={!liveFeed || !!busy || atCapacity}
               onClick={captureFromLobby}
               style={{ marginTop: 10 }}
             >

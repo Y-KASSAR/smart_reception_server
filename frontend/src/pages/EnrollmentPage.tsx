@@ -6,6 +6,18 @@ import { toast } from "../components/Toast/Toast";
 
 type EnrollmentSource = "live" | "upload";
 
+// Multi-angle enrollment guidance. FaceNet embeddings drift with head pose, so
+// capturing a few angles (stored as separate per-guest embeddings, matched
+// best-of) is what lets a guest be recognised when turned ~30–45° from the
+// camera. Each capture slot nudges the next pose.
+const POSE_GUIDE = [
+  "Look straight at the camera",
+  "Turn your head ~30° to the LEFT",
+  "Turn your head ~30° to the RIGHT",
+  "Tilt your head slightly UP",
+  "Tilt your head slightly DOWN",
+];
+
 interface CaptureFrame {
   frame_b64: string;
   preview_b64?: string;
@@ -160,8 +172,9 @@ export default function EnrollmentPage() {
         <div className="page-eyebrow">Records</div>
         <h1 className="page-h1">New enrollment</h1>
         <p className="page-lead">
-          Capture three quick face shots from the lobby camera, confirm consent,
-          and register the guest's profile so they're recognised on their next visit.
+          Capture a few face shots <strong>at different head angles</strong> from the
+          lobby camera, confirm consent, and register the guest's profile so they're
+          recognised — even when turned ~30–45° — on their next visit.
         </p>
       </header>
 
@@ -262,13 +275,34 @@ export default function EnrollmentPage() {
                   </div>
                 </div>
 
+                {frames.length < 5 && (
+                  <div
+                    className="row"
+                    style={{
+                      gap: 8,
+                      marginTop: 14,
+                      padding: "8px 12px",
+                      background: "var(--color-assistance-bg)",
+                      border: "1px solid var(--color-assistance-tint)",
+                      borderRadius: 4,
+                      fontSize: 13,
+                    }}
+                  >
+                    <Camera size={14} />
+                    <span>
+                      <strong>Pose {frames.length + 1}/5:</strong>{" "}
+                      {POSE_GUIDE[frames.length]}
+                    </span>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   className="btn btn-primary"
                   disabled={!hasLiveFrame || capturing || frames.length >= 5}
                   onClick={captureFrame}
                   style={{
-                    marginTop: 14,
+                    marginTop: 10,
                     width: "100%",
                     justifyContent: "center",
                     padding: 12,
@@ -277,7 +311,9 @@ export default function EnrollmentPage() {
                   <Camera />
                   {capturing
                     ? "Analysing…"
-                    : `Capture frame (${frames.length}/5)`}
+                    : frames.length >= 5
+                    ? "All 5 poses captured"
+                    : `Capture pose ${frames.length + 1}/5 — ${POSE_GUIDE[frames.length]}`}
                 </button>
               </>
             ) : (
@@ -344,8 +380,9 @@ export default function EnrollmentPage() {
                     : `Choose photo (${frames.length}/5 captured)`}
                 </button>
                 <div className="t-caption" style={{ marginTop: 8, color: "var(--color-muted)", fontSize: 12 }}>
-                  Tip: a clear, front-facing passport scan is enough. One good photo
-                  often beats three blurry live frames.
+                  Tip: for best results add several photos at different head angles
+                  (front, ¾ left, ¾ right). Each is stored separately and matched
+                  best-of, so the guest is recognised even when turned.
                 </div>
               </>
             )}
@@ -388,10 +425,13 @@ export default function EnrollmentPage() {
                       <Trash2 size={12} />
                     </button>
                     <div
-                      className="t-caption tnum"
-                      style={{ textAlign: "center", marginTop: 4 }}
+                      className="t-caption"
+                      style={{ textAlign: "center", marginTop: 4, lineHeight: 1.3 }}
                     >
-                      q={f.quality?.toFixed(2) ?? "—"}
+                      <div style={{ fontSize: 11 }}>{POSE_GUIDE[i] ?? `Pose ${i + 1}`}</div>
+                      <div className="tnum" style={{ color: "var(--color-muted)" }}>
+                        q={f.quality?.toFixed(2) ?? "—"}
+                      </div>
                     </div>
                   </div>
                 ))}

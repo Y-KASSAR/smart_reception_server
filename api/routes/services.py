@@ -35,6 +35,13 @@ def get_service(service_id: int, db: Session = Depends(get_db), _=Depends(get_cu
     return service
 
 
+@router.post("/recompute-popularity")
+def recompute_popularity(db: Session = Depends(get_db), _=Depends(require_role("admin", "manager"))):
+    """Recompute every service's popularity_score from recommendation statistics."""
+    scores = ServiceRepository.recompute_popularity(db)
+    return {"updated": len(scores), "scores": scores}
+
+
 @router.post("/", response_model=ServiceResponse, status_code=201)
 def create_service(payload: ServiceCreate, db: Session = Depends(get_db), _=Depends(require_role("admin", "manager"))):
     return ServiceRepository.create(db, **payload.model_dump())

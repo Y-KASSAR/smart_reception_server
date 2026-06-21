@@ -66,9 +66,12 @@ export default function AlertsPage() {
   const filtered = useMemo(
     () =>
       alerts
+        // Guard: only show rows matching the selected status, even if the
+        // backend ever returns extra (keeps the list in sync with the badge).
+        .filter((a) => status === "all" || a.status === status)
         .filter((a) => a.severity >= minSeverity)
         .sort((a, b) => b.severity - a.severity || b.id - a.id),
-    [alerts, minSeverity]
+    [alerts, minSeverity, status]
   );
 
   return (

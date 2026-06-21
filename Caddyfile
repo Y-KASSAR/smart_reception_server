@@ -1,0 +1,44 @@
+# ============================================================================
+# Caddyfile — TLS reverse proxy for the Smart Reception server
+# ============================================================================
+# The FastAPI app (server_app.py) serves the dashboard SPA, the REST API,
+# and the /ws WebSocket all on a single plaintext port (default :5000).
+# Caddy sits in front of it and terminates TLS, so the browser talks
+# HTTPS + WSS while the app keeps speaking plain HTTP/WS on localhost.
+#
+# WebSocket upgrades (/ws) are proxied transparently — Caddy forwards the
+# Connection/Upgrade headers automatically, so no extra config is needed.
+#
+# ---------------------------------------------------------------------------
+# Pick ONE site block below (comment out the other), then run:
+#     caddy run
+# from this directory. Stop with Ctrl+C.
+# ---------------------------------------------------------------------------
+
+# --- Option A: Local development / demo -------------------------------------
+# `localhost` makes Caddy mint a locally-trusted certificate automatically
+# (no browser warning on this machine). Dashboard: https://localhost
+localhost {
+	encode gzip
+	reverse_proxy 127.0.0.1:5000
+}
+
+# --- Option B: On-prem pilot on a LAN IP ------------------------------------
+# Uncomment and set your machine's LAN IP. `tls internal` uses Caddy's own
+# local CA (install it once on client devices with `caddy trust`), so other
+# machines on the network reach the dashboard over HTTPS without warnings.
+#
+# https://192.168.1.50 {
+# 	encode gzip
+# 	tls internal
+# 	reverse_proxy 127.0.0.1:5000
+# }
+
+# --- Option C: Public domain (real, auto-renewing Let's Encrypt cert) -------
+# If the server is reachable from the internet on a real domain, Caddy will
+# fetch and renew a trusted certificate with zero extra config.
+#
+# reception.example.com {
+# 	encode gzip
+# 	reverse_proxy 127.0.0.1:5000
+# }

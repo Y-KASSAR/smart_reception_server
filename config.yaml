@@ -44,16 +44,22 @@ detection:
   nms_iou_threshold: 0.4
   device: "auto"          # auto -> CUDA (GPU) if available, else CPU
   inference_width: 960    # YOLO imgsz; lower = faster / lower latency
+  bbox_smoothing: 0.4     # live-overlay anti-jitter: EMA weight on new frame
+                          # (lower = steadier/laggier, 1.0 = off)
+  bbox_deadband_px: 2.0   # hold the box still while movement < this many px
 
 # --- Face Recognition Settings ---
 recognition:
   detection_model: "mtcnn"
   recognition_model: "facenet"
   similarity_threshold: 0.80
+  enroll_verify_threshold: 0.5   # same-person gate when adding a face to an existing profile
   max_embeddings_per_guest: 5
   re_recognition_interval: 30
   recognize_every_n_frames: 15   # run FaceNet every Nth frame (balanced)
   inference_width: 960           # downscale width for MTCNN face detection
+  min_face_size: 20              # smallest detectable face (px); lower = more recall
+  detection_thresholds: [0.6, 0.6, 0.6]  # MTCNN [P,R,O]-net gates; lower = more pose-tolerant
 
 # --- Lobby Monitoring Settings ---
 monitoring:
@@ -65,9 +71,9 @@ monitoring:
   tracking_timeout: 8
 
 # --- Alert Settings ---
-alerts:
+alert:
   cooldown_period: 900
-  email_enabled: true
+  email_enabled: false
   sms_enabled: false
   dashboard_sound_enabled: true
 

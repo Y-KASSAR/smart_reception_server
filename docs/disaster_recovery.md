@@ -201,9 +201,23 @@ or disable upselling temporarily).
 
 ## 5a. HTTPS / TLS
 
-For pilot deployments behind a reverse proxy, terminate TLS at the
-proxy. For direct-to-uvicorn HTTPS during development or on-prem
-pilots, generate a self-signed certificate:
+**Primary mechanism — Caddy reverse proxy (`Caddyfile` in repo root).**
+Caddy terminates TLS in front of the FastAPI app (which keeps speaking
+plain HTTP/WS on `127.0.0.1:5000`) and upgrades `/ws` to WSS
+automatically. Pick one site block in the `Caddyfile` and run:
+
+```bash
+caddy run        # from the repo root
+```
+
+- `localhost { … }` — local/demo; Caddy mints a locally-trusted cert
+  (no browser warning on this machine). Dashboard: `https://localhost`.
+- LAN IP with `tls internal` — run `caddy trust` once on each kiosk to
+  install Caddy's local CA, then reach the dashboard over HTTPS warning-free.
+- Public domain — Caddy fetches and auto-renews a Let's Encrypt cert with
+  zero extra config.
+
+**Alternative — direct-to-uvicorn HTTPS** (no proxy) using a self-signed cert:
 
 ```bash
 python scripts/generate_self_signed_cert.py --host <your-lan-ip> --days 365
@@ -215,8 +229,6 @@ Notes:
 - Browsers will warn on self-signed certs — import `certs/server.crt`
   into the OS / browser trust store on each kiosk to suppress.
 - The `certs/` folder is git-ignored; never commit `server.key`.
-- For production, replace with a CA-issued certificate (Let's Encrypt
-  via a reverse proxy such as nginx or Caddy is recommended).
 
 ---
 

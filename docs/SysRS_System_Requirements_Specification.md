@@ -1020,9 +1020,9 @@ All non-functional requirements use the format **NFR-X.Y** where X denotes the q
 
 | Category | MET | Superseded / Deferred | Notes |
 |---|---|---|---|
-| Functional FR-1 … FR-6 | All P1 met or exceeded | 2 deferred (formal accuracy run, real SMTP/Twilio), 2 partial | Core identification, recommendation, monitoring, alerting, dashboard, and database all delivered. |
+| Functional FR-1 … FR-6 | All P1 met or exceeded | 1 deferred (formal accuracy run), 2 partial | Core identification, recommendation, monitoring, alerting (email **and** Twilio WhatsApp now wired — see §9.4.1), dashboard, and database all delivered. |
 | Functional FR-7 (PIR) | FR-7.8 only | FR-7.1–FR-7.7 superseded | Hardware-driven change to always-on capture. |
-| Non-Functional NFR-1 … NFR-6 | Every NFR-1 performance target met or exceeded | HTTPS/WSS (NFR-2.2/2.3) deferred for LAN demo | See §9.5. |
+| Non-Functional NFR-1 … NFR-6 | Every NFR-1 performance target met or exceeded; HTTPS/WSS (NFR-2.2/2.3) now provided via a Caddy reverse proxy | — | See §9.5. |
 | Acceptance AC-1 … AC-15 | 10 MET | AC-2, AC-6, AC-14, AC-15 deferred; AC-8 N/A | See §9.7. |
 
 ### 9.2 FR-7 — PIR motion detection → always-on capture (SUPERSEDED)
@@ -1046,13 +1046,20 @@ All non-functional requirements use the format **NFR-X.Y** where X denotes the q
 - **Baseline FR-2.5** named eight illustrative rules (loyalty upgrade, service repeat, business traveller, high spender, VIP, long stay, special occasion, late checkout).
 - **As-built**: a seven-rule additive engine with a different, fully-documented rule set — R1 popularity baseline, R2 VIP boost (+0.30), R3 dietary match (+0.20), R4 room-type match (+0.10), R5 Arabic-speaker dining (+0.15), R6 returning-guest winback bundle (+0.30), R7 business-traveller pattern (±0.20). Scores cap at 1.0; top-5 persisted with human-readable rationale.
 - **Requirement intent preserved:** FR-2.1–FR-2.10 (analyse history/preferences, rank top-5, explainable, accept/decline/defer, log outcomes) are all MET. Only the specific rule wording in the FR-2.5 example changed.
+- **FR-2.3 popularity is statistics-driven (as-built):** `Service.popularity_score` (the R1 baseline) is no longer a static catalogue constant — it is computed from recommendation accept/decline outcomes via a Laplace-smoothed acceptance rate `(accepted + 1) / (accepted + declined + 2)`. It is 0.5 with no history, converges to the true acceptance ratio with volume, refreshes live when a guest responds to a recommendation, and can be recomputed on demand via `POST /api/services/recompute-popularity` (admin/manager).
+
+### 9.4.1 FR-4 — alert delivery (as-built)
+
+- **Per-incident templates (FR-4.5):** each `AlertType` (security / wanted / assistance / vip_arrival / arrival / due_out) has a dedicated subject, branded severity-coloured HTML body + plain-text fallback, and a call to action, rendered by `modules/alerts/notification_templates.py`. The earlier single generic body is replaced.
+- **Recipient privacy (FR-4.5):** alert e-mail recipients are **blind-copied (Bcc)** so no recipient can see who else was notified; the delivery envelope is set explicitly so only the configured recipients receive the message.
+- **WhatsApp channel (FR-4.6):** the Twilio path supports Twilio's **WhatsApp Sandbox** in addition to SMS, selectable via `TWILIO_CHANNEL` (`sms` \| `whatsapp`); the message body reuses the same per-incident template. Verified via `scripts/send_test_whatsapp.py`.
 
 ### 9.5 NFR-2 — security specifics
 
 | Baseline | As-built | Reason |
 |---|---|---|
 | NFR-2.1: AES-256 at rest | **AES-256-GCM** (authenticated: version byte + 12-byte nonce + ciphertext + 16-byte tag, base64) | GCM adds integrity/tamper-detection over plain AES; key held outside the DB in `ENCRYPTION_KEY`. Strengthens, does not weaken, the requirement. |
-| NFR-2.2 / NFR-2.3: HTTPS / WSS transport | **Deferred** for the LAN-segment demo; documented for production via a Caddy reverse proxy (5-line addition). | On the isolated direct-cable subnet the marginal security gain was low; flagged in the report's Future Works. |
+| NFR-2.2 / NFR-2.3: HTTPS / WSS transport | **MET** via a **Caddy reverse proxy** (`Caddyfile` in repo root). Caddy terminates TLS in front of the FastAPI app on `127.0.0.1:5000` and upgrades `/ws` to WSS automatically. Three ready-to-use site blocks: `localhost` (auto-trusted cert), LAN IP (`tls internal` + `caddy trust`), and public domain (auto Let's Encrypt). | Originally deferred for the isolated direct-cable demo; the Caddy front-end closes the requirement with a one-file config and no application changes (the app still speaks plain HTTP/WS on localhost). |
 | NFR-2.5 / 2.9: JWT auth, bcrypt cost 12 | MET — JWT (HS256) gates all routes; bcrypt cost factor 12. | — |
 | NFR-2.6: RBAC ≥ 2 roles | Exceeded — **7 staff roles** with admin-scoped mutations. | — |
 | NFR-2.11: right to erasure | MET — `DELETE /api/guests/{id}` cascades to all child records. | — |

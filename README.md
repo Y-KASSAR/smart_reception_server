@@ -129,6 +129,29 @@ See [docs/RPI_DEPLOYMENT.md](docs/RPI_DEPLOYMENT.md) for the step-by-step
 guide. TL;DR: flash Pi OS, wire the PIR to GPIO 17, scp `edge/edge_client.py`
 to the Pi, install via systemd.
 
+### 4 — HTTPS / WSS (Caddy)
+
+The app serves everything (SPA, REST API, `/ws`) on plain HTTP `:5000`. For
+TLS, put [Caddy](https://caddyserver.com) in front of it — the included
+[`Caddyfile`](Caddyfile) terminates HTTPS and transparently upgrades the
+WebSocket to WSS.
+
+```powershell
+# Install Caddy (Windows)
+choco install caddy
+
+# Start the backend first (http://localhost:5000), then in another terminal:
+caddy run            # reads ./Caddyfile
+```
+
+Dashboard is now at **https://localhost** with the WebSocket on **wss://**.
+The frontend auto-derives `wss://` from the page protocol — no rebuild needed.
+For a LAN pilot or public domain, switch to Option B/C in the `Caddyfile`.
+
+> Alternatively, run uvicorn directly with TLS using a self-signed cert:
+> `python scripts/generate_self_signed_cert.py` then start with
+> `--ssl-keyfile certs/server.key --ssl-certfile certs/server.crt`.
+
 ---
 
 ## Test suite
@@ -148,6 +171,15 @@ Coverage:
 - `test_repositories.py` — 26 tests, repository-level coverage
 - `test_upselling.py` — 16 tests, upselling API integration
 - `test_websocket.py` — 8 tests, WS connection + broadcast helpers
+
+**Email latency check (AC-6 / NFR-1.5).** Verify the alert email path delivers
+in under 5 s without any paid SMTP account — the script spins up a local SMTP
+capture server, drives the real `AlertNotifier.send_email()`, and times it:
+
+```powershell
+.\venv\Scripts\python.exe -m scripts.verify_email_latency
+# RESULT: PASS - AC-6 email path verified  (~1.3 s, budget 5 s)
+```
 
 ---
 
@@ -213,8 +245,9 @@ Full Swagger at **http://localhost:5000/docs** when the server is running.
    server with a modified `config.yaml`. Live edits land in a later version.
 4. **Single-camera support only.** SDD architecture is multi-camera-ready
    (camera_id field everywhere) but the dashboard currently shows one feed.
-5. **No HTTPS by default.** Use a reverse proxy (Caddy, nginx) for TLS in
-   production. The PWA is dev-mode HTTP only.
+5. **HTTPS is opt-in via reverse proxy.** Plain HTTP by default; run the
+   included [`Caddyfile`](Caddyfile) (see Quick start §4) for HTTPS/WSS in
+   production or pilot deployments.
 
 ---
 

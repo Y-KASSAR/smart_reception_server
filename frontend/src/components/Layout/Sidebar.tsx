@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import {
+  ALERTS_CHANGED_EVENT,
   clearAuth,
   currentRole,
   currentUsername,
@@ -49,17 +50,24 @@ export default function Sidebar() {
   // Refresh badge count whenever a new alert is pushed
   const { last: push } = useWebSocketEvent<any>("alert_push");
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshPendingCount = () => {
     fetchPendingAlerts()
-      .then((al) => {
-        if (!cancelled) setPendingAlertCount(al.length);
-      })
+      .then((al) => setPendingAlertCount(al.length))
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  // Refetch on mount and whenever a new alert arrives.
+  useEffect(() => {
+    refreshPendingCount();
   }, [push?.alert_id]);
+
+  // Also refetch when an alert is acknowledged/resolved anywhere in the app
+  // (Alerts page or dashboard panel), so the badge clears without a reload.
+  useEffect(() => {
+    const handler = () => refreshPendingCount();
+    window.addEventListener(ALERTS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(ALERTS_CHANGED_EVENT, handler);
+  }, []);
 
   const handleLogout = () => {
     clearAuth();
