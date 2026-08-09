@@ -47,6 +47,9 @@ detection:
   bbox_smoothing: 0.4     # live-overlay anti-jitter: EMA weight on new frame
                           # (lower = steadier/laggier, 1.0 = off)
   bbox_deadband_px: 2.0   # hold the box still while movement < this many px
+  track_max_disappeared_frames: 24  # frames a person can go undetected before
+                                     # their track_id is dropped (higher =
+                                     # dwell-time survives brief occlusion)
 
 # --- Face Recognition Settings ---
 recognition:

@@ -232,13 +232,16 @@ class CentroidTracker:
     computation in a low-traffic lobby.
     """
 
-    def __init__(self, max_disappeared: int = 8, max_distance: float = 250.0,
+    def __init__(self, max_disappeared: Optional[int] = None, max_distance: float = 250.0,
                  bbox_smoothing: Optional[float] = None,
                  bbox_deadband_px: Optional[float] = None):
         self._next_id = 1
         self._objects: Dict[int, Tuple[int, int]] = {}      # id -> centroid (raw)
         self._disappeared: Dict[int, int] = {}              # id -> frames missing
-        self._max_disappeared = max_disappeared
+        self._max_disappeared = (
+            max_disappeared if max_disappeared is not None
+            else int(getattr(settings.detection, "track_max_disappeared_frames", 24))
+        )
         self._max_distance = max_distance
         # Anti-jitter bbox smoothing state: id -> smoothed (x, y, w, h) as floats.
         self._bboxes: Dict[int, Tuple[float, float, float, float]] = {}

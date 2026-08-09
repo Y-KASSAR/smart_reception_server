@@ -72,6 +72,11 @@ class GuestCreate(BaseModel):
     vip_status: bool = False
     preferences: Optional[str] = None
     notes: Optional[str] = None
+    # Lets staff flag a guest as watched at the moment their profile is
+    # created (e.g. during enrollment), instead of always requiring a
+    # separate PUT /{id}/watch call afterward.
+    is_watched: bool = False
+    watch_reason: Optional[str] = None
 
 class GuestUpdate(BaseModel):
     full_name: Optional[str] = None

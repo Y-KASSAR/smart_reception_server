@@ -262,18 +262,23 @@ def ingest_frame(
     # below propagates to the monitor's per-track gate.
     watched_gids: set = set()
     staff_badge_gids: set = set()
+    vip_gids: set = set()
     in_house_gids: set = set()
     if recognized_gids:
         try:
             from database.models import Guest, Reservation, ReservationStatus
-            rows = db.query(Guest.id, Guest.is_watched, Guest.is_staff_badge).filter(
+            rows = db.query(
+                Guest.id, Guest.is_watched, Guest.is_staff_badge, Guest.vip_status
+            ).filter(
                 Guest.id.in_(recognized_gids)
             ).all()
-            for gid, is_watched, is_staff in rows:
+            for gid, is_watched, is_staff, is_vip in rows:
                 if is_watched:
                     watched_gids.add(gid)
                 if is_staff:
                     staff_badge_gids.add(gid)
+                if is_vip:
+                    vip_gids.add(gid)
 
             # FR-3.5 — guest is "in-house" only if they have an active
             # CHECKED_IN reservation right now. Otherwise they're a known
@@ -417,6 +422,20 @@ def ingest_frame(
                                 confidence=r.get("similarity", 0.0),
                                 track_id=r.get("track_id"),
                             )
+                    # VIP arrival hook: AlertNotifier already subscribes to
+                    # this topic and has a full dispatch handler
+                    # (_on_vip_arrival), but until now nothing ever published
+                    # it — VIP recognitions were silently never alerted.
+                    # guest_name comes straight from the recognition cache
+                    # (no extra DB round trip needed, unlike the watchlist
+                    # case above which also needs watch_reason).
+                    if gid in vip_gids and gid not in staff_badge_gids:
+                        event_bus.publish(
+                            "vip_arrival",
+                            guest_id=gid,
+                            guest_name=r.get("guest_name") or "",
+                            confidence=r.get("similarity", 0.0),
+                        )
     except Exception as e:
         logger.debug(f"WS broadcast skipped: {e}")
 

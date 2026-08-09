@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useRef, useState } from "react";
-import { Camera, CheckCircle2, FileImage, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, FileImage, Trash2, Upload } from "lucide-react";
 import { api } from "../services/api";
 import { useWebSocketEvent } from "../hooks/useWebSocket";
 import { toast } from "../components/Toast/Toast";
@@ -59,6 +59,8 @@ export default function EnrollmentPage() {
   const [vip, setVip] = useState(false);
   const [notes, setNotes] = useState("");
   const [consent, setConsent] = useState(false);
+  const [watched, setWatched] = useState(false);
+  const [watchReason, setWatchReason] = useState("");
 
   const hasLiveFrame = !!liveFeed?.frame_b64;
 
@@ -145,6 +147,8 @@ export default function EnrollmentPage() {
           language_preference: language,
           vip_status: vip,
           notes: notes || null,
+          is_watched: watched,
+          watch_reason: watched ? (watchReason || null) : null,
         },
         face_images_b64: frames.map((f) => f.frame_b64),
         consent_given: true,
@@ -155,6 +159,8 @@ export default function EnrollmentPage() {
         failed: data.embeddings_failed,
       });
       setFrames([]);
+      setWatched(false);
+      setWatchReason("");
       toast.success(
         `Enrolled guest #${data.guest.id}`,
         `${data.embeddings_stored} embedding${data.embeddings_stored !== 1 ? "s" : ""} stored.`
@@ -489,6 +495,49 @@ export default function EnrollmentPage() {
               />
               <span>VIP guest</span>
             </label>
+
+            <div
+              style={{
+                padding: 10,
+                background: "var(--color-security-bg)",
+                border: "1px solid var(--color-security-tint)",
+                borderRadius: 4,
+                marginBottom: 14,
+              }}
+            >
+              <label className="row" style={{ alignItems: "flex-start", gap: 8, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={watched}
+                  onChange={(e) => setWatched(e.target.checked)}
+                  style={{ marginTop: 3 }}
+                />
+                <span className="row" style={{ gap: 6 }}>
+                  <AlertTriangle size={14} style={{ color: "var(--color-security-fg)", flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    Add to watchlist — fires a real-time{" "}
+                    <strong>WANTED</strong> alert whenever this guest is recognised.
+                  </span>
+                </span>
+              </label>
+              {watched && (
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Reason (shown to staff in the alert)"
+                  value={watchReason}
+                  onChange={(e) => setWatchReason(e.target.value)}
+                  style={{
+                    width: "100%",
+                    marginTop: 8,
+                    padding: "6px 8px",
+                    fontSize: 13,
+                    border: "1px solid var(--color-security-tint)",
+                    borderRadius: 4,
+                  }}
+                />
+              )}
+            </div>
 
             <div className="form-field">
               <label>Notes</label>

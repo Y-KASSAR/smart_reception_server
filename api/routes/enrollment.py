@@ -191,7 +191,10 @@ def complete_enrollment(
                 status_code=409, detail="Guest with this email already exists"
             )
 
-    guest = GuestRepository.create(db, **payload.guest.model_dump())
+    guest_data = payload.guest.model_dump()
+    if not guest_data.get("is_watched"):
+        guest_data["watch_reason"] = None
+    guest = GuestRepository.create(db, **guest_data)
 
     from modules.recognition import face_engine
 

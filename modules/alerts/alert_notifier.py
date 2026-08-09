@@ -52,6 +52,13 @@ class AlertNotifier:
     def __init__(self):
         self._lock = threading.RLock()
         self._last_fire: dict[tuple, float] = {}
+        # Cheap opportunistic pruning: every _PRUNE_EVERY calls, sweep out
+        # entries whose cooldown has long since expired. Without this,
+        # _last_fire grows forever — one permanent entry per unique
+        # (event, track_id) key ever seen, and track_ids churn constantly
+        # (a new one is minted on every tracker re-registration), so a
+        # long-running deployment would leak memory indefinitely.
+        self._checks_since_prune = 0
         self._subscribed = False
         self.subscribe()
 
@@ -201,6 +208,8 @@ class AlertNotifier:
         if settings.alert.sms_enabled:
             self.send_sms(alert)
 
+    _PRUNE_EVERY = 200  # cooldown checks between opportunistic sweeps
+
     def _cooldown_check(self, key: tuple) -> bool:
         """Return True if enough time has elapsed since the last firing."""
         from time import monotonic
@@ -210,6 +219,16 @@ class AlertNotifier:
             if now - last < _COOLDOWN_SECONDS:
                 return False
             self._last_fire[key] = now
+
+            self._checks_since_prune += 1
+            if self._checks_since_prune >= self._PRUNE_EVERY:
+                self._checks_since_prune = 0
+                expired = [
+                    k for k, t in self._last_fire.items()
+                    if now - t >= _COOLDOWN_SECONDS
+                ]
+                for k in expired:
+                    del self._last_fire[k]
         return True
 
     # ------------------------------------------------------------------

@@ -10,6 +10,7 @@ import time
 import pytest
 
 from modules.monitoring import PersonMonitor, TrackedPerson
+from detection.person_detector import CentroidTracker, PersonDetection
 
 
 @pytest.fixture
@@ -207,6 +208,54 @@ class TestPerformance:
         elapsed = time.perf_counter() - start
         # 100 sweeps over 100 tracks should comfortably fit in 1 second
         assert elapsed < 1.0
+
+
+# ----------------------------------------------------------------------
+# CentroidTracker — track-id continuity (dwell-timer reliability)
+# ----------------------------------------------------------------------
+class TestCentroidTrackerMaxDisappeared:
+    def test_defaults_to_settings_value_when_not_overridden(self):
+        from config.settings import settings
+        t = CentroidTracker()
+        assert t._max_disappeared == int(settings.detection.track_max_disappeared_frames)
+
+    def test_explicit_arg_overrides_settings(self):
+        t = CentroidTracker(max_disappeared=3)
+        assert t._max_disappeared == 3
+
+    def test_track_survives_gap_within_budget(self):
+        """A person briefly undetected for fewer frames than max_disappeared
+        keeps the SAME track_id — this is what protects PersonMonitor's
+        dwell-time clock from resetting on minor occlusion."""
+        t = CentroidTracker(max_disappeared=5, bbox_smoothing=1.0)
+        d1 = [PersonDetection(bbox=(10, 10, 20, 40), confidence=0.9)]
+        t.update(d1)
+        tid = d1[0].track_id
+        assert tid is not None
+
+        # 3 frames with nobody detected (gap < max_disappeared=5)
+        for _ in range(3):
+            t.update([])
+
+        d2 = [PersonDetection(bbox=(11, 11, 20, 40), confidence=0.9)]
+        t.update(d2)
+        assert d2[0].track_id == tid  # same person, same id
+
+    def test_track_id_churns_after_budget_exceeded(self):
+        """Beyond max_disappeared frames of absence, the old id is evicted
+        and a new detection at the same spot gets a NEW track_id — the
+        exact mechanism that resets PersonMonitor's dwell clock."""
+        t = CentroidTracker(max_disappeared=2, bbox_smoothing=1.0)
+        d1 = [PersonDetection(bbox=(10, 10, 20, 40), confidence=0.9)]
+        t.update(d1)
+        tid = d1[0].track_id
+
+        for _ in range(3):  # gap > max_disappeared=2
+            t.update([])
+
+        d2 = [PersonDetection(bbox=(11, 11, 20, 40), confidence=0.9)]
+        t.update(d2)
+        assert d2[0].track_id != tid
 
 
 # ----------------------------------------------------------------------

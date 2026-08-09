@@ -320,7 +320,10 @@ def create_guest(payload: GuestCreate, db: Session = Depends(get_db), _=Depends(
         existing = GuestRepository.get_by_email(db, payload.email)
         if existing:
             raise HTTPException(status_code=409, detail="Guest with this email already exists")
-    return GuestRepository.create(db, **payload.model_dump())
+    data = payload.model_dump()
+    if not data.get("is_watched"):
+        data["watch_reason"] = None
+    return GuestRepository.create(db, **data)
 
 
 @router.put("/{guest_id}", response_model=GuestResponse)

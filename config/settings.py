@@ -58,6 +58,15 @@ class DetectionConfig:
     # less than this vs the held box, the box is kept perfectly still — so a
     # stationary person shows zero shimmer. Set 0 to disable the deadband.
     bbox_deadband_px: float = 2.0
+    # How many consecutive frames a tracked person can go undetected (brief
+    # occlusion, motion blur) before the tracker drops their track_id and
+    # mints a new one on their next detection. Too low and PersonMonitor's
+    # dwell-time clock (keyed by track_id) silently resets on every minor
+    # blip, which can prevent the security/assistance alert thresholds from
+    # ever being reached for someone genuinely lingering. Kept roughly in
+    # step with monitoring.tracking_timeout (seconds) at the app's typical
+    # 10-16fps rather than the previous hardcoded 8-frame (<1s) default.
+    track_max_disappeared_frames: int = 24
 @dataclass
 class RecognitionConfig:
     detection_model: str = "mtcnn"
