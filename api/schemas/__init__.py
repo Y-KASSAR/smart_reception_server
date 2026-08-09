@@ -66,6 +66,8 @@ class GuestCreate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     nationality: Optional[str] = None
+    company: Optional[str] = None
+    source: Optional[str] = None
     language_preference: str = "en"
     vip_status: bool = False
     preferences: Optional[str] = None
@@ -78,6 +80,8 @@ class GuestUpdate(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     nationality: Optional[str] = None
+    company: Optional[str] = None
+    source: Optional[str] = None
     language_preference: Optional[str] = None
     vip_status: Optional[bool] = None
     preferences: Optional[str] = None
@@ -94,6 +98,8 @@ class GuestResponse(BaseModel):
     email: Optional[str]
     phone: Optional[str]
     nationality: Optional[str]
+    company: Optional[str] = None
+    source: Optional[str] = None
     id_type: Optional[str] = None
     id_number: Optional[str] = None
     language_preference: str
@@ -324,6 +330,37 @@ class ServiceResponse(BaseModel):
     is_active: bool
     popularity_score: float
     created_at: datetime
+
+
+# ============================================================
+# Service Posting Schemas (a service charge posted to a guest's bill —
+# the upselling engine's usage-history data source; see ServicePosting model)
+# ============================================================
+
+class ServicePostingCreate(BaseModel):
+    service_id: int
+    quantity: int = 1
+    unit_price: Optional[float] = None    # defaults to the service catalogue price
+    amount: Optional[float] = None        # defaults to unit_price * quantity
+    reservation_id: Optional[int] = None  # defaults to the guest's currently checked-in stay
+    source_system: str = "manual"
+    notes: Optional[str] = None
+
+class ServicePostingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    guest_id: int
+    reservation_id: Optional[int] = None
+    service_id: int
+    quantity: int
+    unit_price: Optional[float] = None
+    amount: Optional[float] = None
+    posted_by_id: Optional[int] = None
+    source_system: str
+    posted_at: datetime
+    notes: Optional[str] = None
+    service: Optional[ServiceResponse] = None
 
 
 # ============================================================

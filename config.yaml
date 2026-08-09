@@ -73,8 +73,8 @@ monitoring:
 # --- Alert Settings ---
 alert:
   cooldown_period: 900
-  email_enabled: false
-  sms_enabled: false
+  email_enabled: true
+  sms_enabled: true
   dashboard_sound_enabled: true
 
 # --- Database Settings ---

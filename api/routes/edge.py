@@ -7,6 +7,7 @@ monitoring on each frame.
 """
 import base64
 import time
+from collections import deque
 try:
     import numpy as np
     _NUMPY_AVAILABLE = True
@@ -36,6 +37,45 @@ _recent_recognitions: dict = {}   # track_id -> recognition_output entry
 # Wall-clock of the last live-feed (full JPEG) broadcast, used to throttle the
 # heavy video preview independently of the lightweight detection_update stream.
 _last_live_feed_t = 0.0
+
+# ---------------------------------------------------------------------------
+# Per-stage timing instrumentation. Rolling windows so avg/p95/max stay cheap
+# to compute and reflect recent behaviour, not the whole process lifetime.
+# Exposed via GET /api/edge/status and periodically summarized to the log —
+# without this, tuning recognize_every_n_frames / inference_width / detection
+# thresholds is a guess about which stage (YOLO vs MTCNN+FaceNet) dominates.
+# ---------------------------------------------------------------------------
+_TIMING_WINDOW = 200
+_LOG_EVERY_N_FRAMES = 200
+_detection_ms: deque = deque(maxlen=_TIMING_WINDOW)
+_recognition_ms: deque = deque(maxlen=_TIMING_WINDOW)
+
+
+def _percentile(values: list, pct: float) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    idx = min(len(s) - 1, int(len(s) * pct))
+    return s[idx]
+
+
+def _stage_stats(samples: deque) -> dict:
+    vals = list(samples)
+    if not vals:
+        return {"avg_ms": 0.0, "p95_ms": 0.0, "max_ms": 0.0, "samples": 0}
+    return {
+        "avg_ms": round(sum(vals) / len(vals), 1),
+        "p95_ms": round(_percentile(vals, 0.95), 1),
+        "max_ms": round(max(vals), 1),
+        "samples": len(vals),
+    }
+
+
+def _timing_snapshot() -> dict:
+    return {
+        "person_detection": _stage_stats(_detection_ms),
+        "face_recognition": _stage_stats(_recognition_ms),
+    }
 
 
 class FramePayload(BaseModel):
@@ -105,7 +145,9 @@ def ingest_frame(
         raise HTTPException(status_code=400, detail=f"Invalid frame data: {e}")
 
     # 1. Person detection + tracking (every frame — cheap on GPU)
+    t_detect0 = time.perf_counter()
     person_dets = person_detector.detect(frame)
+    _detection_ms.append((time.perf_counter() - t_detect0) * 1000.0)
     person_tracker.update(person_dets)
     current_track_ids = {p.track_id for p in person_dets if p.track_id is not None}
 
@@ -114,6 +156,15 @@ def ingest_frame(
     #    track so the dashboard keeps showing recognized guests continuously.
     global _frame_counter
     _frame_counter += 1
+    if _frame_counter % _LOG_EVERY_N_FRAMES == 0:
+        snap = _timing_snapshot()
+        logger.info(
+            "Timing (last %d samples) — detection avg=%.1fms p95=%.1fms | "
+            "recognition avg=%.1fms p95=%.1fms",
+            _TIMING_WINDOW,
+            snap["person_detection"]["avg_ms"], snap["person_detection"]["p95_ms"],
+            snap["face_recognition"]["avg_ms"], snap["face_recognition"]["p95_ms"],
+        )
     recognize_every = max(1, int(getattr(settings.recognition, "recognize_every_n_frames", 1)))
     # Only run the expensive FaceNet pass on the Nth frame AND only when YOLO
     # actually saw a person — no point detecting faces in an empty lobby.
@@ -125,7 +176,9 @@ def ingest_frame(
 
     if do_recognize:
         # 3. Map each recognized face to the best-overlapping person track
+        t_recognize0 = time.perf_counter()
         face_results = face_engine.recognize(frame, db=db)
+        _recognition_ms.append((time.perf_counter() - t_recognize0) * 1000.0)
         faces_detected = len(face_results)
         faces_recognized = sum(1 for r in face_results if r.is_recognized)
         for r in face_results:
@@ -380,12 +433,15 @@ def ingest_frame(
 
 @router.get("/status")
 def edge_status(_: str = Depends(_verify_api_key)):
-    """Return current edge processing status."""
+    """Return current edge processing status, including a rolling window of
+    per-stage timing (person detection vs face recognition) so bottlenecks
+    can be diagnosed live instead of guessed at."""
     return {
         "active_tracks": person_monitor.active_count,
         "person_detection_backend": person_detector.backend,
         "recognition_backend": face_engine.backend,
         "guest_embeddings_loaded": face_engine.guest_count,
+        "timing": _timing_snapshot(),
     }
 
 

@@ -1,13 +1,13 @@
-external_id,full_name,email,phone,nationality,id_type,id_number,vip_status,language_preference,notes
-PMS001,Rami Khoury,rami.khoury@example.com,70300001,LB,civil_id,001-A-1100,True,ar,Prefers high-floor rooms
-PMS002,Hana Saade,hana.saade@example.com,70300002,LB,passport,LB7700321,False,fr,Allergic to peanuts
-PMS003,Omar Halabi,omar.halabi@example.com,70300003,LB,civil_id,001-B-2233,True,ar,
-PMS004,Marie Dubois,marie.dubois@example.com,+33612345678,FR,passport,FR12CDEFG,False,fr,Late check-in usual
-PMS005,Klaus Berger,klaus.berger@example.com,+491511223344,DE,passport,DE998877,False,en,
-PMS006,Sofia Russo,sofia.russo@example.com,+393345566778,IT,passport,IT554433,False,it,Wedding anniversary stay
-PMS007,Ahmed Al-Mansoori,ahmed.almansoori@example.com,+971501112233,AE,passport,AE2211009,True,ar,Always requests the spa package
-PMS008,Yuki Tanaka,yuki.tanaka@example.com,+819011223344,JP,passport,JP8877665,False,en,Vegetarian
-PMS009,Olivia Chen,olivia.chen@example.com,+14165550199,CA,passport,CA4421109,False,en,
-PMS010,Karim El-Khoury,karim.elkhoury@example.com,70300010,LB,civil_id,001-C-7788,False,ar,Repeat business traveller
-PMS011,Lena Schmidt,lena.schmidt@example.com,+491708812345,DE,passport,DE332211,True,en,Prefers ground floor
-PMS012,Pierre Salameh,pierre.salameh@example.com,+33611222333,FR,passport,FR55ABC,False,fr,
+external_id,full_name,email,phone,nationality,id_type,id_number,vip_status,language_preference,company,source,notes
+PMS001,Rami Khoury,rami.khoury@example.com,70300001,LB,civil_id,001-A-1100,True,ar,Acme Corp,corporate,Prefers high-floor rooms
+PMS002,Hana Saade,hana.saade@example.com,70300002,LB,passport,LB7700321,False,fr,,booking.com,Allergic to peanuts
+PMS003,Omar Halabi,omar.halabi@example.com,70300003,LB,civil_id,001-B-2233,True,ar,Acme Corp,direct,
+PMS004,Marie Dubois,marie.dubois@example.com,+33612345678,FR,passport,FR12CDEFG,False,fr,,travel_agent,Late check-in usual
+PMS005,Klaus Berger,klaus.berger@example.com,+491511223344,DE,passport,DE998877,False,en,,,
+PMS006,Sofia Russo,sofia.russo@example.com,+393345566778,IT,passport,IT554433,False,it,,booking.com,Wedding anniversary stay
+PMS007,Ahmed Al-Mansoori,ahmed.almansoori@example.com,+971501112233,AE,passport,AE2211009,True,ar,,,Always requests the spa package
+PMS008,Yuki Tanaka,yuki.tanaka@example.com,+819011223344,JP,passport,JP8877665,False,en,,,Vegetarian
+PMS009,Olivia Chen,olivia.chen@example.com,+14165550199,CA,passport,CA4421109,False,en,,,
+PMS010,Karim El-Khoury,karim.elkhoury@example.com,70300010,LB,civil_id,001-C-7788,False,ar,Acme Corp,corporate,Repeat business traveller
+PMS011,Lena Schmidt,lena.schmidt@example.com,+491708812345,DE,passport,DE332211,True,en,,,Prefers ground floor
+PMS012,Pierre Salameh,pierre.salameh@example.com,+33611222333,FR,passport,FR55ABC,False,fr,,,

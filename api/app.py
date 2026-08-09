@@ -40,6 +40,10 @@ async def lifespan(app: FastAPI):
     try:
         from database.connection import SessionLocal
         from modules.recognition import face_engine
+        # Load MTCNN/FaceNet weights now (blocking, ~10s) rather than on the
+        # first real recognition request — moves the cold-start cost to boot
+        # time, before uvicorn starts accepting traffic.
+        face_engine.warm_up()
         with SessionLocal() as db:
             n = face_engine.load_guest_embeddings(db)
         logger.info(f"Face engine cache hydrated: {n} guests loaded")

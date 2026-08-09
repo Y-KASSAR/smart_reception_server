@@ -119,6 +119,19 @@ class FaceRecognitionEngine:
             self._device = "cpu"
             return "none"
 
+    def warm_up(self) -> bool:
+        """Load MTCNN + FaceNet weights now instead of lazily on the first
+        recognition call. Without this, the first frame containing a person
+        after every server (re)start pays a one-off multi-second model-load
+        stall inline in that request; calling this from app startup moves
+        the cost to boot time, before the server accepts traffic."""
+        import time
+        t0 = time.perf_counter()
+        ok = self._ensure_models()
+        if ok:
+            logger.info(f"Face engine warm-up complete in {time.perf_counter() - t0:.2f}s")
+        return ok
+
     def _ensure_models(self) -> bool:
         """Initialize MTCNN + FaceNet on first use. Returns True on success."""
         if self.backend != "facenet":

@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel
 from database.connection import get_db
-from database.repositories import GuestRepository, FaceEmbeddingRepository
+from database.repositories import GuestRepository, FaceEmbeddingRepository, ServicePostingRepository
 from database.models import GuestStatus
 from api.schemas import (
     GuestCreate, GuestUpdate, GuestResponse,
     WatchlistUpdate, StaffBadgeUpdate,
+    ServicePostingCreate, ServicePostingResponse,
 )
 from database.models import Guest
 from utils.security_utils import get_current_staff, require_role
@@ -219,6 +220,7 @@ def guest_summary(guest_id: int, db: Session = Depends(get_db), _=Depends(get_cu
             "id": g.id, "full_name": g.full_name,
             "email": g.email, "phone": g.phone,
             "nationality": g.nationality,
+            "company": g.company, "source": g.source,
             "id_type": g.id_type, "id_number": g.id_number,
             "language_preference": g.language_preference,
             "vip_status": bool(g.vip_status),
@@ -256,6 +258,60 @@ def guest_summary(guest_id: int, db: Session = Depends(get_db), _=Depends(get_cu
         },
         "special_requests_history": [r.special_requests for r in reservations if r.special_requests],
     }
+
+
+@router.post("/{guest_id}/service-postings", response_model=ServicePostingResponse, status_code=201)
+def post_service_charge(
+    guest_id: int,
+    payload: ServicePostingCreate,
+    db: Session = Depends(get_db),
+    staff=Depends(get_current_staff),
+):
+    """Record a service charge posted to the guest's bill (SDD upselling data
+    source) — the equivalent of a Micros/Opera interface posting: the spa
+    agent closing a massage to the room, room service posting a fruit
+    basket, reception charging an airport transfer, etc.
+
+    This is purely an internal analytics input — the raw charge is never
+    surfaced back to the dashboard; only the aggregated usage-rate
+    percentages it feeds into recommendation `reasoning` text are.
+    """
+    guest = GuestRepository.get_by_id(db, guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+
+    from database.models import Service
+    service = db.query(Service).filter(Service.id == payload.service_id).first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    staff_id = staff.get("sub") if isinstance(staff, dict) else None
+    return ServicePostingRepository.create(
+        db,
+        guest_id=guest_id,
+        service_id=payload.service_id,
+        quantity=payload.quantity,
+        unit_price=payload.unit_price,
+        amount=payload.amount,
+        reservation_id=payload.reservation_id,
+        posted_by_id=int(staff_id) if staff_id is not None else None,
+        source_system=payload.source_system,
+        notes=payload.notes,
+    )
+
+
+@router.get("/{guest_id}/service-postings", response_model=List[ServicePostingResponse])
+def list_service_charges(
+    guest_id: int,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_staff),
+):
+    """Staff-facing charge history for one guest (not guest-facing)."""
+    guest = GuestRepository.get_by_id(db, guest_id)
+    if not guest:
+        raise HTTPException(status_code=404, detail="Guest not found")
+    return ServicePostingRepository.get_by_guest(db, guest_id, limit=limit)
 
 
 @router.post("/", response_model=GuestResponse, status_code=201)

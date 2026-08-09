@@ -1,0 +1,8 @@
+guest_email,service_name,quantity,unit_price,posted_at,source_system,notes
+rami.khoury@example.com,Signature Spa Ritual,1,,2026-08-09T00:01,micros,Massage
+rami.khoury@example.com,Airport Transfer,1,,2026-08-09T00:01,opera,Pickup on arrival
+sofia.russo@example.com,Couples Wellness Package,1,,2026-08-09T00:01,micros,Anniversary package
+sofia.russo@example.com,Rooftop Dinner Reservation,1,,2026-08-09T00:01,opera,
+ahmed.almansoori@example.com,Signature Spa Ritual,1,,2026-08-09T00:01,micros,Departure morning spa
+olivia.chen@example.com,In-Room Breakfast Service,1,,2026-08-09T00:01,opera,Fruit basket + breakfast
+olivia.chen@example.com,Airport Transfer,1,,2026-08-09T00:01,opera,

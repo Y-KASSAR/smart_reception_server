@@ -84,6 +84,12 @@ class Guest(Base):
     # Identification document (used at check-in / shown on the guest profile)
     id_type = Column(String(30), nullable=True)                 # e.g. "passport" / "civil_id" / "driving_license"
     id_number = Column(String(50), nullable=True)
+    # Corporate account this stay is billed under, if any (e.g. "Acme Corp").
+    # Drives the upselling engine's company-level usage-rate rule.
+    company = Column(String(200), nullable=True)
+    # Booking/acquisition channel, e.g. "direct", "booking.com", "travel_agent",
+    # "corporate", "walk_in". Free text — drives the source-level usage-rate rule.
+    source = Column(String(50), nullable=True)
     language_preference = Column(String(50), default="en")
     vip_status = Column(Boolean, nullable= True)
     status = Column(Enum(GuestStatus), nullable=False, default=GuestStatus.ACTIVE)
@@ -107,6 +113,7 @@ class Guest(Base):
     visits = relationship("Visit", back_populates="guest", cascade="all, delete-orphan")
     reservations =relationship("Reservation", back_populates="guest",cascade="all, delete-orphan")
     recommendations = relationship("Recommendation", back_populates="guest", cascade="all, delete-orphan")
+    service_postings = relationship("ServicePosting", back_populates="guest", cascade="all, delete-orphan")
 
     def __init__ (self, *args, **kwargs):
         if "full_name" in kwargs and "first_name" not in kwargs and "last_name" not in kwargs:
@@ -194,6 +201,7 @@ class Reservation(Base):
 
     # Relationships
     guest = relationship("Guest", back_populates="reservations")
+    service_postings = relationship("ServicePosting", back_populates="reservation", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<​Reservation(id={self.id}, code='{self.reservation_code}', guest_id={self.guest_id})>"
@@ -212,9 +220,49 @@ class Service(Base):
 
     # Relationships
     recommendations = relationship("Recommendation", back_populates="service", cascade="all, delete-orphan")
+    postings = relationship("ServicePosting", back_populates="service", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<​Service(id={self.id}, name='{self.name}', category='{self.category}')>"
+
+
+class ServicePosting(Base):
+    """A single service charge posted to a guest's bill (SDD upselling data
+    source). Mirrors what a real property would receive from a POS/PMS
+    interface (Micros posting a spa treatment, Opera posting a room-service
+    charge, reception posting an airport transfer) — this project has no
+    live interface, so rows land here either via the staff-facing API
+    (real-time posting) or the `import_pms.py` CSV batch path.
+
+    This is the structured record `Visit.services_used` (a loose JSON name
+    list) can't provide: a proper service_id FK per charge, so the upselling
+    engine can compute real "used X% of the time" usage rates. The raw rows
+    here are intentionally never surfaced to the dashboard — only the
+    aggregated percentages (via recommendation `reasoning` text) are.
+    """
+    __tablename__ = "service_postings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    guest_id = Column(Integer, ForeignKey("guests.id", ondelete="CASCADE"), nullable=False)
+    # The stay this charge was posted against. Nullable because some charges
+    # (e.g. a taxi for a walk-in, non-resident guest) aren't tied to a room
+    # stay — those are excluded from the guest's personal "N stays" ratio.
+    reservation_id = Column(Integer, ForeignKey("reservations.id", ondelete="SET NULL"), nullable=True)
+    service_id = Column(Integer, ForeignKey("services.id", ondelete="CASCADE"), nullable=False)
+    quantity = Column(Integer, default=1)
+    unit_price = Column(Float, nullable=True)   # snapshot of Service.price at posting time
+    amount = Column(Float, nullable=True)        # quantity * unit_price (or a custom override)
+    posted_by_id = Column(Integer, ForeignKey("staff.id", ondelete="SET NULL"), nullable=True)
+    source_system = Column(String(30), default="manual")  # "micros" / "opera" / "manual" / "pms_import"
+    posted_at = Column(DateTime, default=_utcnow)
+    notes = Column(Text, nullable=True)
+
+    guest = relationship("Guest", back_populates="service_postings")
+    reservation = relationship("Reservation", back_populates="service_postings")
+    service = relationship("Service", back_populates="postings")
+
+    def __repr__(self):
+        return f"<ServicePosting(id={self.id}, guest_id={self.guest_id}, service_id={self.service_id})>"
 
 class Alert(Base):
     __tablename__ = "alerts"

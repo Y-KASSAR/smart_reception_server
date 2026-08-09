@@ -1,11 +1,11 @@
 reservation_code,guest_email,room_number,room_type,check_in_date,check_out_date,num_guests,rate_per_night,total_amount,status,special_requests
-PMS-RES-0101,rami.khoury@example.com,401,Deluxe King,2026-05-29T14:00,2026-06-01T14:00,1,240.0,720.0,checked_in,Extra pillow menu
-PMS-RES-0102,hana.saade@example.com,302,Standard Twin,2026-05-31T14:00,2026-06-03T14:00,2,170.0,510.0,due_in,Allergic to peanuts
-PMS-RES-0103,omar.halabi@example.com,517,Junior Suite,2026-06-01T14:00,2026-06-05T14:00,2,320.0,1280.0,confirmed,
-PMS-RES-0104,marie.dubois@example.com,204,Deluxe King,2026-05-31T14:00,2026-06-02T14:00,1,240.0,480.0,due_in,Late check-in around midnight
-PMS-RES-0105,klaus.berger@example.com,611,Executive Suite,2026-06-02T14:00,2026-06-04T14:00,1,410.0,820.0,confirmed,
-PMS-RES-0106,sofia.russo@example.com,808,Honeymoon Suite,2026-05-30T14:00,2026-06-02T14:00,2,510.0,1530.0,checked_in,Anniversary - rose petals + bottle of champagne
-PMS-RES-0107,ahmed.almansoori@example.com,909,Royal Suite,2026-05-28T14:00,2026-05-31T14:00,2,780.0,2340.0,due_out,Schedule spa package on departure morning
-PMS-RES-0108,yuki.tanaka@example.com,215,Standard King,2026-06-03T14:00,2026-06-06T14:00,1,190.0,570.0,confirmed,Vegetarian breakfast
-PMS-RES-0109,olivia.chen@example.com,318,Deluxe Twin,2026-05-30T14:00,2026-06-01T14:00,2,250.0,500.0,checked_in,
-PMS-RES-0110,karim.elkhoury@example.com,402,Business Deluxe,2026-06-05T14:00,2026-06-07T14:00,1,220.0,440.0,confirmed,Business traveller — quiet room
+PMS-RES-0101,rami.khoury@example.com,401,Deluxe King,2026-08-07T14:00,2026-08-10T14:00,1,240.0,720.0,checked_in,Extra pillow menu
+PMS-RES-0102,hana.saade@example.com,302,Standard Twin,2026-08-09T14:00,2026-08-12T14:00,2,170.0,510.0,due_in,Allergic to peanuts
+PMS-RES-0103,omar.halabi@example.com,517,Junior Suite,2026-08-10T14:00,2026-08-14T14:00,2,320.0,1280.0,confirmed,
+PMS-RES-0104,marie.dubois@example.com,204,Deluxe King,2026-08-09T14:00,2026-08-11T14:00,1,240.0,480.0,due_in,Late check-in around midnight
+PMS-RES-0105,klaus.berger@example.com,611,Executive Suite,2026-08-11T14:00,2026-08-13T14:00,1,410.0,820.0,confirmed,
+PMS-RES-0106,sofia.russo@example.com,808,Honeymoon Suite,2026-08-08T14:00,2026-08-11T14:00,2,510.0,1530.0,checked_in,Anniversary - rose petals + bottle of champagne
+PMS-RES-0107,ahmed.almansoori@example.com,909,Royal Suite,2026-08-06T14:00,2026-08-09T14:00,2,780.0,2340.0,due_out,Schedule spa package on departure morning
+PMS-RES-0108,yuki.tanaka@example.com,215,Standard King,2026-08-12T14:00,2026-08-15T14:00,1,190.0,570.0,confirmed,Vegetarian breakfast
+PMS-RES-0109,olivia.chen@example.com,318,Deluxe Twin,2026-08-08T14:00,2026-08-10T14:00,2,250.0,500.0,checked_in,
+PMS-RES-0110,karim.elkhoury@example.com,402,Business Deluxe,2026-08-14T14:00,2026-08-16T14:00,1,220.0,440.0,confirmed,Business traveller — quiet room

@@ -10,15 +10,29 @@ nightly, drop it in ``data/pms_imports/``, and run this script.
 Idempotent: matches existing rows by email (guests) and reservation_code
 (reservations). Existing rows get UPDATED, not duplicated.
 
-CSV schemas (both files optional; only the ones present get imported):
+CSV schemas (all files optional; only the ones present get imported):
 
     data/pms_imports/guests.csv:
-        external_id,full_name,email,phone,nationality,id_type,id_number,vip_status,language_preference,notes
+        external_id,full_name,email,phone,nationality,id_type,id_number,vip_status,
+        language_preference,company,source,notes
+        — `company` (corporate billing account) and `source` (booking channel,
+        e.g. "direct"/"booking.com"/"travel_agent"/"corporate"/"walk_in") feed
+        the upselling engine's group usage-rate rules; both optional/blank-ok.
 
     data/pms_imports/reservations.csv:
         reservation_code,guest_email,room_number,room_type,check_in_date,
         check_out_date,num_guests,rate_per_night,total_amount,status,
         special_requests
+
+    data/pms_imports/service_postings.csv:
+        guest_email,service_name,quantity,unit_price,posted_at,source_system,notes
+        — one row per charge posted to a guest's bill (what a real property's
+        Micros/Opera interface would push: a spa treatment, a room-service
+        order, an airport transfer). Feeds the upselling engine's usage-rate
+        recommendation rules (RecommendationEngine R9-R12) — never surfaced
+        back to the dashboard as a bill. `reservation_id` is auto-resolved to
+        the guest's currently checked-in stay; `unit_price` defaults to the
+        service catalogue price when blank.
 
 Dates may be ISO-8601 (``2026-05-31T14:00``) or ``YYYY-MM-DD``. Status
 values map to the ReservationStatus enum case-insensitively.
@@ -71,6 +85,29 @@ SAMPLE_GUESTS = [
     ("PMS012", "Pierre Salameh",   "pierre.salameh@example.com",  "+33611222333", "FR", "passport","FR55ABC",   False, "fr", ""),
 ]
 
+SAMPLE_SERVICE_POSTINGS = [
+    # guest_email, service_name, quantity, unit_price ("" = use catalogue price), source_system, notes
+    ("rami.khoury@example.com",      "Signature Spa Ritual",       1, "", "micros", "Massage"),
+    ("rami.khoury@example.com",      "Airport Transfer",           1, "", "opera",  "Pickup on arrival"),
+    ("sofia.russo@example.com",      "Couples Wellness Package",   1, "", "micros", "Anniversary package"),
+    ("sofia.russo@example.com",      "Rooftop Dinner Reservation", 1, "", "opera",  ""),
+    ("ahmed.almansoori@example.com", "Signature Spa Ritual",       1, "", "micros", "Departure morning spa"),
+    ("olivia.chen@example.com",      "In-Room Breakfast Service",  1, "", "opera",  "Fruit basket + breakfast"),
+    ("olivia.chen@example.com",      "Airport Transfer",           1, "", "opera",  ""),
+]
+
+# Optional (company, source) overrides by email — demonstrates the upselling
+# engine's company/source group usage-rate rules without restructuring the
+# SAMPLE_GUESTS tuples above. Guests not listed here get blank company/source.
+SAMPLE_COMPANY_SOURCE = {
+    "rami.khoury@example.com":    ("Acme Corp", "corporate"),
+    "karim.elkhoury@example.com": ("Acme Corp", "corporate"),
+    "omar.halabi@example.com":    ("Acme Corp", "direct"),
+    "hana.saade@example.com":     ("", "booking.com"),
+    "sofia.russo@example.com":    ("", "booking.com"),
+    "marie.dubois@example.com":   ("", "travel_agent"),
+}
+
 SAMPLE_RESERVATIONS = [
     # code, guest_email, room, room_type, check_in (rel days from today), check_out (rel days), num, rate, total, status, requests
     ("PMS-RES-0101", "rami.khoury@example.com",      "401", "Deluxe King",       -2, +1,  1, 240.0, 720.0,  "checked_in",  "Extra pillow menu"),
@@ -94,9 +131,13 @@ def _write_sample(out_dir: Path) -> None:
     with g_path.open("w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["external_id", "full_name", "email", "phone", "nationality",
-                    "id_type", "id_number", "vip_status", "language_preference", "notes"])
+                    "id_type", "id_number", "vip_status", "language_preference",
+                    "company", "source", "notes"])
         for row in SAMPLE_GUESTS:
-            w.writerow(list(row))
+            external_id, full_name, email, phone, nationality, id_type, id_number, vip, lang, notes = row
+            company, source = SAMPLE_COMPANY_SOURCE.get(email, ("", ""))
+            w.writerow([external_id, full_name, email, phone, nationality,
+                        id_type, id_number, vip, lang, company, source, notes])
 
     today_iso_date = datetime.now().strftime("%Y-%m-%d")
     print(f"Sample dates anchored on today = {today_iso_date}")
@@ -115,6 +156,17 @@ def _write_sample(out_dir: Path) -> None:
 
     print(f"Wrote {g_path} ({len(SAMPLE_GUESTS)} rows)")
     print(f"Wrote {r_path} ({len(SAMPLE_RESERVATIONS)} rows)")
+
+    sp_path = out_dir / "service_postings.csv"
+    with sp_path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["guest_email", "service_name", "quantity", "unit_price",
+                    "posted_at", "source_system", "notes"])
+        for email, service_name, qty, price, source_system, notes in SAMPLE_SERVICE_POSTINGS:
+            w.writerow([email, service_name, qty, price,
+                        datetime.now().isoformat(timespec="minutes"), source_system, notes])
+    print(f"Wrote {sp_path} ({len(SAMPLE_SERVICE_POSTINGS)} rows)")
+    print("Note: run scripts/seed_services.py first so service_name lookups resolve.")
 
 
 # -----------------------------------------------------------------
@@ -159,6 +211,8 @@ def import_guests(path: Path, db, dry_run: bool) -> tuple[int, int]:
                     id_number=(row.get("id_number") or "").strip() or None,
                     language_preference=(row.get("language_preference") or "en").strip(),
                     vip_status=_truthy(row.get("vip_status", "false")),
+                    company=(row.get("company") or "").strip() or None,
+                    source=(row.get("source") or "").strip() or None,
                     notes=(row.get("notes") or "").strip() or None,
                 )
                 if not dry_run:
@@ -175,6 +229,10 @@ def import_guests(path: Path, db, dry_run: bool) -> tuple[int, int]:
                 if lang: guest.language_preference = lang
                 vip = (row.get("vip_status") or "").strip()
                 if vip: guest.vip_status = _truthy(vip)
+                company = (row.get("company") or "").strip()
+                if company: guest.company = company
+                source = (row.get("source") or "").strip()
+                if source: guest.source = source
                 notes = (row.get("notes") or "").strip()
                 if notes: guest.notes = notes
                 updated += 1
@@ -240,6 +298,75 @@ def import_reservations(path: Path, db, dry_run: bool) -> tuple[int, int]:
     return created, updated
 
 
+def import_service_postings(path: Path, db, dry_run: bool) -> tuple[int, int]:
+    """Returns (created, skipped). Matches guests by email and services by
+    catalogue name (run scripts/seed_services.py first if the target DB has
+    no service catalogue yet).
+
+    Idempotent when the CSV carries a `posted_at` timestamp (the normal case
+    for a real export): re-importing the same file matches the existing row
+    by (guest, service, posted_at) and skips it rather than double-posting
+    the charge. Rows with no `posted_at` are always inserted fresh — a blank
+    timestamp means "post now", which is inherently a new event each run.
+    """
+    if not path.exists():
+        return 0, 0
+    from database.models import Service, ServicePosting
+    from database.repositories import ServicePostingRepository
+
+    created = skipped = 0
+    with path.open(encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            email = (row.get("guest_email") or "").strip()
+            service_name = (row.get("service_name") or "").strip()
+            if not email or not service_name:
+                skipped += 1
+                continue
+            guest = db.query(Guest).filter(Guest.email == email).first()
+            if guest is None:
+                print(f"  skip posting: no matching guest for {email}")
+                skipped += 1
+                continue
+            service = db.query(Service).filter(Service.name == service_name).first()
+            if service is None:
+                print(f"  skip posting: no matching service '{service_name}'")
+                skipped += 1
+                continue
+
+            unit_price_raw = (row.get("unit_price") or "").strip()
+            posted_at_raw = (row.get("posted_at") or "").strip()
+            posted_at = _parse_dt(posted_at_raw) if posted_at_raw else None
+
+            if posted_at is not None:
+                dup = (
+                    db.query(ServicePosting)
+                    .filter(
+                        ServicePosting.guest_id == guest.id,
+                        ServicePosting.service_id == service.id,
+                        ServicePosting.posted_at == posted_at,
+                    )
+                    .first()
+                )
+                if dup is not None:
+                    skipped += 1
+                    continue
+
+            if not dry_run:
+                ServicePostingRepository.create(
+                    db,
+                    guest_id=guest.id,
+                    service_id=service.id,
+                    quantity=int(row.get("quantity") or 1),
+                    unit_price=float(unit_price_raw) if unit_price_raw else None,
+                    posted_at=posted_at,
+                    source_system=(row.get("source_system") or "pms_import").strip(),
+                    notes=(row.get("notes") or "").strip() or None,
+                )
+            created += 1
+    return created, skipped
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=str(_DEFAULT_DIR), help="Folder containing guests.csv + reservations.csv")
@@ -257,11 +384,14 @@ def main():
     try:
         g_path = out_dir / "guests.csv"
         r_path = out_dir / "reservations.csv"
+        sp_path = out_dir / "service_postings.csv"
         gc, gu = import_guests(g_path, db, args.dry_run)
         rc, ru = import_reservations(r_path, db, args.dry_run)
+        spc, sps = import_service_postings(sp_path, db, args.dry_run)
         verb = "Would" if args.dry_run else "Imported"
-        print(f"{verb} guests:       created={gc} updated={gu}  (from {g_path})")
-        print(f"{verb} reservations: created={rc} updated={ru}  (from {r_path})")
+        print(f"{verb} guests:            created={gc} updated={gu}  (from {g_path})")
+        print(f"{verb} reservations:      created={rc} updated={ru}  (from {r_path})")
+        print(f"{verb} service postings:  created={spc} skipped={sps}  (from {sp_path})")
     finally:
         db.close()
 

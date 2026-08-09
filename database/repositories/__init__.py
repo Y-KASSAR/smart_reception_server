@@ -6,6 +6,7 @@ from database.repositories.reservation_repository import ReservationRepository
 from database.repositories.service_repository import ServiceRepository
 from database.repositories.recommendation_repository import RecommendationRepository
 from database.repositories.face_embedding_repository import FaceEmbeddingRepository
+from database.repositories.service_posting_repository import ServicePostingRepository
 
 __all__ = [
     "GuestRepository",
@@ -16,4 +17,5 @@ __all__ = [
     "ServiceRepository",
     "RecommendationRepository",
     "FaceEmbeddingRepository",
+    "ServicePostingRepository",
 ]
